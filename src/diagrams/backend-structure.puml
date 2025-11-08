@@ -1,0 +1,70 @@
+@startuml
+' Backend structure diagram (high level)
+skinparam packageStyle rectangle
+
+package "backend/src" {
+  package core {
+    package prisma
+    package config
+    package logger
+    package exceptions
+    package guards
+  }
+
+  package common {
+    folder dtos
+    folder pipes
+    folder interceptors
+    folder decorators
+  }
+
+  package modules {
+    package auth {
+      [auth.controller]
+      [auth.service]
+      folder dto
+      folder strategies
+    }
+
+    package user {
+      [user.controller]
+      [user.service]
+      folder repository
+      folder dto
+      folder interfaces
+    }
+
+    package devices {
+      [devices.controller]
+      [devices.service]
+      folder repository
+      folder dto
+      package readings {
+        [readings.controller]
+        [readings.service]
+        folder dto
+      }
+    }
+
+    package energy
+    package automations
+    package realtime
+  }
+
+  package integrations {
+    package mqtt
+    package notification
+  }
+
+  package jobs
+  package scripts
+  package tests
+}
+
+' Relationships (high level)
+core -[#0000FF]> modules : provides
+common -[#008800]> modules : reusable utils
+integrations -[#AA5500]> modules : external adapters
+modules --> tests : covered by
+
+@enduml

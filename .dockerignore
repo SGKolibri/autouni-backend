@@ -1,0 +1,54 @@
+# Dependencies
+node_modules
+npm-debug.log
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+dist
+build
+
+# Testing
+coverage
+.nyc_output
+
+# IDEs
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Documentation
+*.md
+docs
+
+# Development
+.editorconfig
+.prettierrc
+.eslintrc.js
+eslint.config.mjs
+
+# Logs
+*.log
+logs
+
+# Misc
+.husky
+.github

@@ -1,0 +1,101 @@
+[
+  {
+    "name": "Desligar todas as luzes à noite",
+    "description": "Desliga automaticamente todas as luzes do campus às 23h",
+    "triggerType": "SCHEDULE",
+    "cron": "0 23 * * *",
+    "action": {
+      "type": "mqtt",
+      "topic": "devices/lights/all/command",
+      "payload": {
+        "state": "OFF"
+      }
+    },
+    "enabled": true
+  },
+  {
+    "name": "Ligar luzes salas de aula - Manhã",
+    "description": "Liga as luzes das salas de aula às 7h nos dias úteis",
+    "triggerType": "SCHEDULE",
+    "cron": "0 7 * * 1-5",
+    "action": {
+      "type": "mqtt",
+      "topic": "devices/lights/classrooms/command",
+      "payload": {
+        "state": "ON"
+      }
+    },
+    "enabled": true
+  },
+  {
+    "name": "Desligar ar-condicionado fim de expediente",
+    "description": "Desliga todos os ares-condicionados às 18h",
+    "triggerType": "SCHEDULE",
+    "cron": "0 18 * * 1-5",
+    "action": {
+      "type": "mqtt",
+      "topic": "devices/ac/all/command",
+      "payload": {
+        "state": "OFF"
+      }
+    },
+    "enabled": true
+  },
+  {
+    "name": "Modo econômico final de semana",
+    "description": "Ativa modo econômico nos finais de semana",
+    "triggerType": "SCHEDULE",
+    "cron": "0 0 * * 6",
+    "action": {
+      "type": "mqtt",
+      "topic": "system/mode",
+      "payload": {
+        "mode": "eco",
+        "maxDevices": 5
+      }
+    },
+    "enabled": true
+  },
+  {
+    "name": "Backup verificação de sensores",
+    "description": "Verifica status de todos os sensores a cada 30 minutos",
+    "triggerType": "SCHEDULE",
+    "cron": "*/30 * * * *",
+    "action": {
+      "type": "mqtt",
+      "topic": "devices/sensors/ping",
+      "payload": {
+        "command": "status_check"
+      }
+    },
+    "enabled": true
+  },
+  {
+    "name": "Shutdown de emergência",
+    "description": "Desliga todos os dispositivos em caso de emergência (acionamento manual)",
+    "triggerType": "MANUAL",
+    "action": {
+      "type": "mqtt",
+      "topic": "system/emergency",
+      "payload": {
+        "command": "shutdown_all",
+        "priority": "high"
+      }
+    },
+    "enabled": true
+  },
+  {
+    "name": "Reiniciar auditórios domingo",
+    "description": "Reinicia equipamentos dos auditórios todo domingo à meia-noite",
+    "triggerType": "SCHEDULE",
+    "cron": "0 0 * * 0",
+    "action": {
+      "type": "mqtt",
+      "topic": "devices/auditoriums/command",
+      "payload": {
+        "command": "restart"
+      }
+    },
+    "enabled": true
+  }
+]

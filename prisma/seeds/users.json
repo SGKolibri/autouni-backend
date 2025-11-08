@@ -1,0 +1,34 @@
+[
+  {
+    "email": "admin@autouni.edu.br",
+    "name": "Administrador Sistema",
+    "password": "Admin@123",
+    "role": "ADMIN",
+    "phone": "+55 62 99504-7887",
+    "cpf": "123.456.789-00"
+  },
+  {
+    "email": "coordenador@autouni.edu.br",
+    "name": "João Silva Coordenador",
+    "password": "Coord@123",
+    "role": "COORDINATOR",
+    "phone": "+55 62 98765-4322",
+    "cpf": "234.567.890-62"
+  },
+  {
+    "email": "tecnico@autouni.edu.br",
+    "name": "Maria Santos Técnica",
+    "password": "Tech@123",
+    "role": "TECHNICIAN",
+    "phone": "+55 62 98765-4323",
+    "cpf": "345.678.901-22"
+  },
+  {
+    "email": "viewer@autouni.edu.br",
+    "name": "Carlos Oliveira Visualizador",
+    "password": "View@123",
+    "role": "VIEWER",
+    "phone": "+55 62 98765-4324",
+    "cpf": "456.789.012-33"
+  }
+]

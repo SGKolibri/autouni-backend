@@ -1,0 +1,51 @@
+services:
+  mqtt:
+    image: eclipse-mosquitto:latest
+    container_name: autoUniMqtt
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - mqtt-data:/mosquitto/data
+      - mqtt-logs:/mosquitto/log
+    networks:
+      - autouni-network
+    command: mosquitto -c /mosquitto-no-auth.conf
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: autoUniApi
+    restart: unless-stopped
+    depends_on:
+      mqtt:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      # Banco de dados PostgreSQL no Render (externo)
+      DATABASE_URL: "postgresql://autouni_api_db_user:LsnPiTytnaCo4Ed2ntFYk7R24qCHIM5L@dpg-d46i8o7gi27c73aroj0g-a.oregon-postgres.render.com/autouni_api_db"
+      # MQTT dentro do container usa o hostname do serviço (mqtt)
+      MQTT_URL: "mqtt://mqtt:1883"
+      PORT: 3000
+      JWT_SECRET: eyJhbGciOiJIUzI1NiJ9.eyJSb2xlIjoiQWRtaW4iLCJJc3N1ZXIiOiJJc3N1ZXIiLCJVc2VybmFtZSI6IkphdmFJblVzZSIsImV4cCI6MTc2MDY0MzAxMSwiaWF0IjoxNzYwNjQzMDExfQ.5zsawq52QQZm_sWsO2nVHnMh-9GUAs0uTi1DQQMpoVQ
+      ROOT_EMAIL: samuelcustodioes@gmail.com
+      ROOT_PASSWORD: Fahrenheit451
+      SMTP_HOST: smtp.gmail.com
+      SMTP_PORT: 587
+      SMTP_USER: samuelcustodioes@gmail.com
+      SMTP_PASS: "zzda ifba glci rehu"
+      SMTP_FROM: samuelcustodioes@gmail.com
+    ports:
+      - "3000:3000"
+    networks:
+      - autouni-network
+
+volumes:
+  mqtt-data:
+  mqtt-logs:
+
+networks:
+  autouni-network:
+    driver: bridge

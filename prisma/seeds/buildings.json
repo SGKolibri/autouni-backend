@@ -1,0 +1,341 @@
+[
+  {
+    "name": "Bloco A",
+    "description": "Prédio principal de Engenharia com salas de aula e laboratórios",
+    "location": "Campus Central - Setor Norte",
+    "floors": [
+      {
+        "number": 1,
+        "name": "Térreo",
+        "rooms": [
+          { "name": "A101", "type": "CLASSROOM" },
+          { "name": "A102", "type": "CLASSROOM" },
+          { "name": "A103", "type": "LAB" },
+          { "name": "A104", "type": "CLASSROOM" },
+          { "name": "A105", "type": "CLASSROOM" },
+          { "name": "A106", "type": "LAB" },
+          { "name": "A107", "type": "CLASSROOM" },
+          { "name": "A108", "type": "CLASSROOM" },
+          { "name": "A109", "type": "AUDITORIUM" },
+          { "name": "A110", "type": "OFFICE" }
+        ]
+      },
+      {
+        "number": 2,
+        "name": "Primeiro Andar",
+        "rooms": [
+          { "name": "A201", "type": "CLASSROOM" },
+          { "name": "A202", "type": "CLASSROOM" },
+          { "name": "A203", "type": "LAB" },
+          { "name": "A204", "type": "CLASSROOM" },
+          { "name": "A205", "type": "CLASSROOM" },
+          { "name": "A206", "type": "LAB" },
+          { "name": "A207", "type": "CLASSROOM" },
+          { "name": "A208", "type": "CLASSROOM" },
+          { "name": "A209", "type": "OFFICE" },
+          { "name": "A210", "type": "OFFICE" }
+        ]
+      },
+      {
+        "number": 3,
+        "name": "Segundo Andar",
+        "rooms": [
+          { "name": "A301", "type": "CLASSROOM" },
+          { "name": "A302", "type": "CLASSROOM" },
+          { "name": "A303", "type": "LAB" },
+          { "name": "A304", "type": "CLASSROOM" },
+          { "name": "A305", "type": "CLASSROOM" },
+          { "name": "A306", "type": "LAB" },
+          { "name": "A307", "type": "CLASSROOM" },
+          { "name": "A308", "type": "CLASSROOM" },
+          { "name": "A309", "type": "OFFICE" },
+          { "name": "A310", "type": "OTHER" }
+        ]
+      },
+      {
+        "number": 4,
+        "name": "Terceiro Andar",
+        "rooms": [
+          { "name": "A401", "type": "CLASSROOM" },
+          { "name": "A402", "type": "CLASSROOM" },
+          { "name": "A403", "type": "LAB" },
+          { "name": "A404", "type": "CLASSROOM" },
+          { "name": "A405", "type": "CLASSROOM" },
+          { "name": "A406", "type": "LAB" },
+          { "name": "A407", "type": "CLASSROOM" },
+          { "name": "A408", "type": "CLASSROOM" },
+          { "name": "A409", "type": "OFFICE" },
+          { "name": "A410", "type": "OTHER" }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Bloco B",
+    "description": "Prédio de Ciências Humanas e Sociais",
+    "location": "Campus Central - Setor Sul",
+    "floors": [
+      {
+        "number": 1,
+        "name": "Térreo",
+        "rooms": [
+          { "name": "B101", "type": "CLASSROOM" },
+          { "name": "B102", "type": "CLASSROOM" },
+          { "name": "B103", "type": "LIBRARY" },
+          { "name": "B104", "type": "CLASSROOM" },
+          { "name": "B105", "type": "CLASSROOM" },
+          { "name": "B106", "type": "CLASSROOM" },
+          { "name": "B107", "type": "CLASSROOM" },
+          { "name": "B108", "type": "CLASSROOM" },
+          { "name": "B109", "type": "OFFICE" },
+          { "name": "B110", "type": "OFFICE" }
+        ]
+      },
+      {
+        "number": 2,
+        "name": "Primeiro Andar",
+        "rooms": [
+          { "name": "B201", "type": "CLASSROOM" },
+          { "name": "B202", "type": "CLASSROOM" },
+          { "name": "B203", "type": "CLASSROOM" },
+          { "name": "B204", "type": "CLASSROOM" },
+          { "name": "B205", "type": "CLASSROOM" },
+          { "name": "B206", "type": "CLASSROOM" },
+          { "name": "B207", "type": "CLASSROOM" },
+          { "name": "B208", "type": "CLASSROOM" },
+          { "name": "B209", "type": "OFFICE" },
+          { "name": "B210", "type": "OFFICE" }
+        ]
+      },
+      {
+        "number": 3,
+        "name": "Segundo Andar",
+        "rooms": [
+          { "name": "B301", "type": "CLASSROOM" },
+          { "name": "B302", "type": "CLASSROOM" },
+          { "name": "B303", "type": "CLASSROOM" },
+          { "name": "B304", "type": "CLASSROOM" },
+          { "name": "B305", "type": "CLASSROOM" },
+          { "name": "B306", "type": "CLASSROOM" },
+          { "name": "B307", "type": "CLASSROOM" },
+          { "name": "B308", "type": "CLASSROOM" },
+          { "name": "B309", "type": "OFFICE" },
+          { "name": "B310", "type": "AUDITORIUM" }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Bloco C",
+    "description": "Prédio de Engenharias e Arquitetura",
+    "location": "Campus Central - Setor Leste",
+    "floors": [
+      {
+        "number": 1,
+        "name": "Térreo",
+        "rooms": [
+          { "name": "C101", "type": "OFFICE" },
+          { "name": "C102", "type": "OFFICE" },
+          { "name": "C103", "type": "CLASSROOM" },
+          { "name": "C104", "type": "CLASSROOM" },
+          { "name": "C105", "type": "OFFICE" },
+          { "name": "C106", "type": "CLASSROOM" },
+          { "name": "C107", "type": "OFFICE" },
+          { "name": "C108", "type": "CLASSROOM" },
+          { "name": "C109", "type": "OFFICE" },
+          { "name": "C110", "type": "OTHER" }
+        ]
+      },
+      {
+        "number": 2,
+        "name": "Primeiro Andar",
+        "rooms": [
+          { "name": "C201", "type": "OFFICE" },
+          { "name": "C202", "type": "OFFICE" },
+          { "name": "C203", "type": "AUDITORIUM" },
+          { "name": "C204", "type": "OFFICE" },
+          { "name": "C205", "type": "OFFICE" },
+          { "name": "C206", "type": "OFFICE" },
+          { "name": "C207", "type": "OFFICE" },
+          { "name": "C208", "type": "OFFICE" },
+          { "name": "C209", "type": "OTHER" },
+          { "name": "C210", "type": "OTHER" }
+        ]
+      },
+      {
+        "number": 3,
+        "name": "Segundo Andar",
+        "rooms": [
+          { "name": "C301", "type": "OFFICE" },
+          { "name": "C302", "type": "OFFICE" },
+          { "name": "C303", "type": "OFFICE" },
+          { "name": "C304", "type": "OFFICE" },
+          { "name": "C305", "type": "OFFICE" },
+          { "name": "C306", "type": "OFFICE" },
+          { "name": "C307", "type": "OFFICE" },
+          { "name": "C308", "type": "OFFICE" },
+          { "name": "C309", "type": "OTHER" },
+          { "name": "C310", "type": "OTHER" }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Bloco D",
+    "description": "Prédio de Matemática, Física e Química",
+    "location": "Campus Central - Setor Leste",
+    "floors": [
+      {
+        "number": 1,
+        "name": "Térreo",
+        "rooms": [
+          { "name": "D101", "type": "CLASSROOM" },
+          { "name": "D102", "type": "CLASSROOM" },
+          { "name": "D103", "type": "LAB" },
+          { "name": "D104", "type": "LAB" },
+          { "name": "D105", "type": "CLASSROOM" },
+          { "name": "D106", "type": "CLASSROOM" },
+          { "name": "D107", "type": "LAB" },
+          { "name": "D108", "type": "CLASSROOM" },
+          { "name": "D109", "type": "OFFICE" },
+          { "name": "D110", "type": "OFFICE" }
+        ]
+      },
+      {
+        "number": 2,
+        "name": "Primeiro Andar",
+        "rooms": [
+          { "name": "D201", "type": "CLASSROOM" },
+          { "name": "D202", "type": "CLASSROOM" },
+          { "name": "D203", "type": "LAB" },
+          { "name": "D204", "type": "LAB" },
+          { "name": "D205", "type": "CLASSROOM" },
+          { "name": "D206", "type": "CLASSROOM" },
+          { "name": "D207", "type": "LAB" },
+          { "name": "D208", "type": "CLASSROOM" },
+          { "name": "D209", "type": "OFFICE" },
+          { "name": "D210", "type": "OFFICE" }
+        ]
+      },
+      {
+        "number": 3,
+        "name": "Segundo Andar",
+        "rooms": [
+          { "name": "D301", "type": "CLASSROOM" },
+          { "name": "D302", "type": "CLASSROOM" },
+          { "name": "D303", "type": "LAB" },
+          { "name": "D304", "type": "LAB" },
+          { "name": "D305", "type": "CLASSROOM" },
+          { "name": "D306", "type": "CLASSROOM" },
+          { "name": "D307", "type": "LAB" },
+          { "name": "D308", "type": "CLASSROOM" },
+          { "name": "D309", "type": "OFFICE" },
+          { "name": "D310", "type": "AUDITORIUM" }
+        ]
+      },
+      {
+        "number": 4,
+        "name": "Terceiro Andar",
+        "rooms": [
+          { "name": "D401", "type": "CLASSROOM" },
+          { "name": "D402", "type": "CLASSROOM" },
+          { "name": "D403", "type": "LAB" },
+          { "name": "D404", "type": "LAB" },
+          { "name": "D405", "type": "CLASSROOM" },
+          { "name": "D406", "type": "CLASSROOM" },
+          { "name": "D407", "type": "LAB" },
+          { "name": "D408", "type": "CLASSROOM" },
+          { "name": "D409", "type": "OFFICE" },
+          { "name": "D410", "type": "OTHER" }
+        ]
+      },
+      {
+        "number": 5,
+        "name": "Quarto Andar",
+        "rooms": [
+          { "name": "D501", "type": "CLASSROOM" },
+          { "name": "D502", "type": "CLASSROOM" },
+          { "name": "D503", "type": "LAB" },
+          { "name": "D504", "type": "LAB" },
+          { "name": "D505", "type": "CLASSROOM" },
+          { "name": "D506", "type": "CLASSROOM" },
+          { "name": "D507", "type": "LAB" },
+          { "name": "D508", "type": "CLASSROOM" },
+          { "name": "D509", "type": "OFFICE" },
+          { "name": "D510", "type": "OTHER" }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Bloco E",
+    "description": "Prédio de Medicina, Enfermagem e Odontologia",
+    "location": "Campus Central - Setor Oeste",
+    "floors": [
+      {
+        "number": 1,
+        "name": "Térreo",
+        "rooms": [
+          { "name": "E101", "type": "CLASSROOM" },
+          { "name": "E102", "type": "LAB" },
+          { "name": "E103", "type": "LAB" },
+          { "name": "E104", "type": "LAB" },
+          { "name": "E105", "type": "CLASSROOM" },
+          { "name": "E106", "type": "CLASSROOM" },
+          { "name": "E107", "type": "LAB" },
+          { "name": "E108", "type": "CLASSROOM" },
+          { "name": "E109", "type": "OFFICE" },
+          { "name": "E110", "type": "OTHER" }
+        ]
+      },
+      {
+        "number": 2,
+        "name": "Primeiro Andar",
+        "rooms": [
+          { "name": "E201", "type": "CLASSROOM" },
+          { "name": "E202", "type": "LAB" },
+          { "name": "E203", "type": "LAB" },
+          { "name": "E204", "type": "LAB" },
+          { "name": "E205", "type": "CLASSROOM" },
+          { "name": "E206", "type": "CLASSROOM" },
+          { "name": "E207", "type": "LAB" },
+          { "name": "E208", "type": "CLASSROOM" },
+          { "name": "E209", "type": "OFFICE" },
+          { "name": "E210", "type": "OTHER" }
+        ]
+      },
+      {
+        "number": 3,
+        "name": "Segundo Andar",
+        "rooms": [
+          { "name": "E301", "type": "CLASSROOM" },
+          { "name": "E302", "type": "LAB" },
+          { "name": "E303", "type": "LAB" },
+          { "name": "E304", "type": "LAB" },
+          { "name": "E305", "type": "CLASSROOM" },
+          { "name": "E306", "type": "CLASSROOM" },
+          { "name": "E307", "type": "LAB" },
+          { "name": "E308", "type": "CLASSROOM" },
+          { "name": "E309", "type": "OFFICE" },
+          { "name": "E310", "type": "AUDITORIUM" }
+        ]
+      },
+      {
+        "number": 4,
+        "name": "Terceiro Andar",
+        "rooms": [
+          { "name": "E401", "type": "CLASSROOM" },
+          { "name": "E402", "type": "LAB" },
+          { "name": "E403", "type": "LAB" },
+          { "name": "E404", "type": "CLASSROOM" },
+          { "name": "E405", "type": "CLASSROOM" },
+          { "name": "E406", "type": "LAB" },
+          { "name": "E407", "type": "CLASSROOM" },
+          { "name": "E408", "type": "CLASSROOM" },
+          { "name": "E409", "type": "OFFICE" },
+          { "name": "E410", "type": "OTHER" }
+        ]
+      }
+    ]
+  }
+]
