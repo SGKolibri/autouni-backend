@@ -9,8 +9,6 @@ export class MqttService implements OnModuleInit, OnModuleDestroy, IMqttService 
   private client: MqttClient;
   private readonly logger = new Logger(MqttService.name);
   private connected = false;
-  private connectionAttempts = 0;
-  private maxRetries = 10;
 
   constructor(
     private readonly mqttRepository: MqttRepository,
@@ -30,8 +28,6 @@ export class MqttService implements OnModuleInit, OnModuleDestroy, IMqttService 
     const username = process.env.MQTT_USERNAME;
     const password = process.env.MQTT_PASSWORD;
 
-    this.logger.log(`Attempting to connect to MQTT broker at ${url} (attempt ${this.connectionAttempts + 1}/${this.maxRetries})`);
-
     this.client = connect(url, {
       username,
       password,
@@ -41,8 +37,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy, IMqttService 
 
     this.client.on('connect', () => {
       this.connected = true;
-      this.connectionAttempts = 0;
-      this.logger.log(`✅ Connected to MQTT broker at ${url}`);
+      this.logger.log(`Connected to MQTT broker at ${url}`);
       this.subscribeToDefaultTopics();
     });
 
@@ -50,18 +45,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy, IMqttService 
 
     this.client.on('error', (err) => {
       this.connected = false;
-      this.connectionAttempts++;
-      this.logger.error(
-        `❌ MQTT connection error (attempt ${this.connectionAttempts}/${this.maxRetries}): ${err.message}`,
-        err,
-      );
-      
-      if (this.connectionAttempts >= this.maxRetries) {
-        this.logger.warn(
-          `⚠️ Max MQTT connection retries (${this.maxRetries}) reached. The application will continue without MQTT support. ` +
-          `Please ensure the MQTT broker is running and accessible at: ${url}`,
-        );
-      }
+      this.logger.error('MQTT connection error', err);
     });
 
     this.client.on('disconnect', () => {
@@ -70,7 +54,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy, IMqttService 
     });
 
     this.client.on('reconnect', () => {
-      this.logger.log('Attempting to reconnect to MQTT broker...');
+      this.logger.log('Reconnecting to MQTT broker...');
     });
   }
 
@@ -199,10 +183,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy, IMqttService 
   // Public API methods
   publish(topic: string, payload: any, options?: { qos?: 0 | 1 | 2; retain?: boolean }): void {
     if (!this.connected) {
-      this.logger.warn(
-        `⚠️ Cannot publish to ${topic}: MQTT client not connected. ` +
-        `Make sure the MQTT broker is running at ${process.env.MQTT_URL ?? 'mqtt://localhost:1883'}`,
-      );
+      this.logger.warn('Cannot publish: MQTT client not connected');
       return;
     }
 
