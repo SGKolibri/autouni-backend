@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: autouni-api
+    env: docker
+    plan: standard
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: autouni_api_db
+      - key: JWT_SECRET
+        sync: false
+      - key: ROOT_EMAIL
+        sync: false
+      - key: ROOT_PASSWORD
+        sync: false
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+    healthCheckPath: /api/health
+    buildCommand: npm install && npm run build
+    startCommand: ./entrypoint.sh
+    autoDeploy: true

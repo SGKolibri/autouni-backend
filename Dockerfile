@@ -8,7 +8,7 @@ ARG DATABASE_URL="postgresql://postgres:postgres@localhost:5432/autouni?schema=p
 # Copia package.json e package-lock (se houver) primeiro para cache de instalação
 COPY package*.json ./
 # Instala dependências (inclui devDependencies para build)
-RUN npm ci
+RUN npm ci --ignore-scripts
 
 # Copia o restante do código
 COPY . .
@@ -17,7 +17,7 @@ COPY . .
 RUN DATABASE_URL=${DATABASE_URL} npx prisma generate
 
 # Build da aplicação Nest (assume que existe script "build")
-RUN npm run build
+RUN npm run build && npm prune --production
 
 # --- production stage ---
 FROM node:20-slim AS runner
