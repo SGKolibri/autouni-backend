@@ -2,15 +2,14 @@ services:
   - type: web
     name: autouni-api
     env: docker
-    plan: standard
+    plan: starter
     region: oregon
     dockerfilePath: ./Dockerfile
     envVars:
       - key: NODE_ENV
         value: production
       - key: DATABASE_URL
-        fromDatabase:
-          name: autouni_api_db
+        sync: false
       - key: JWT_SECRET
         sync: false
       - key: ROOT_EMAIL
@@ -27,7 +26,7 @@ services:
         sync: false
       - key: SMTP_FROM
         sync: false
+      # MQTT_URL não está definido - MQTT ficará desabilitado em produção
+      # Para habilitar, configure um broker MQTT externo (CloudMQTT, HiveMQ, etc)
     healthCheckPath: /api/health
-    buildCommand: npm install && npm run build
-    startCommand: ./entrypoint.sh
     autoDeploy: true
