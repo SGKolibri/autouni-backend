@@ -35,9 +35,36 @@ export class EnergyController {
   constructor(private readonly energyService: EnergyService) {}
 
   @Post('readings')
-  @ApiOperation({ summary: 'Create a new energy reading' })
-  @ApiResponse({ status: 201, description: 'Energy reading created successfully' })
-  @ApiResponse({ status: 400, description: 'Bad request - Invalid data' })
+  @ApiOperation({ 
+    summary: 'Create a new energy reading',
+    description: 'Registra uma nova leitura de consumo energético para um dispositivo'
+  })
+  @ApiResponse({ 
+    status: 201, 
+    description: 'Energy reading created successfully',
+    schema: {
+      example: {
+        id: 'uuid-reading-1',
+        deviceId: 'uuid-device-1',
+        valueWh: 150.5,
+        voltage: 220,
+        current: 0.68,
+        timestamp: '2025-01-11T10:00:00.000Z',
+        createdAt: '2025-01-11T10:00:00.000Z'
+      }
+    }
+  })
+  @ApiResponse({ 
+    status: 400, 
+    description: 'Bad request - Invalid data',
+    schema: {
+      example: {
+        statusCode: 400,
+        message: ['valueWh must be a positive number'],
+        error: 'Bad Request'
+      }
+    }
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async createReading(@Body() createReadingDto: CreateEnergyReadingDto) {
     return this.energyService.createReading(createReadingDto);
@@ -61,9 +88,28 @@ export class EnergyController {
   }
 
   @Get('devices/:deviceId/stats')
-  @ApiOperation({ summary: 'Get energy statistics for a specific device' })
+  @ApiOperation({ 
+    summary: 'Get energy statistics for a specific device',
+    description: 'Retorna estatísticas agregadas de consumo energético de um dispositivo'
+  })
   @ApiParam({ name: 'deviceId', description: 'Device ID', type: String })
-  @ApiResponse({ status: 200, description: 'Energy statistics for device' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Energy statistics for device',
+    schema: {
+      example: {
+        totalKwh: 125.5,
+        count: 500,
+        avgWh: 251.0,
+        maxWh: 500.0,
+        minWh: 50.0,
+        period: {
+          from: '2025-01-01T00:00:00.000Z',
+          to: '2025-01-31T23:59:59.000Z'
+        }
+      }
+    }
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async getDeviceStats(
     @Param('deviceId', ParseUUIDPipe) deviceId: string,
@@ -126,9 +172,27 @@ export class EnergyController {
   }
 
   @Get('buildings/:buildingId/stats')
-  @ApiOperation({ summary: 'Get energy statistics for a building' })
+  @ApiOperation({ 
+    summary: 'Get energy statistics for a building',
+    description: 'Retorna estatísticas agregadas de consumo energético de todo um prédio'
+  })
   @ApiParam({ name: 'buildingId', description: 'Building ID', type: String })
-  @ApiResponse({ status: 200, description: 'Energy statistics for building' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Energy statistics for building',
+    schema: {
+      example: {
+        totalKwh: 12500.00,
+        count: 50000,
+        avgWh: 250.0,
+        maxWh: 1500.0,
+        minWh: 1.0,
+        floorCount: 5,
+        roomCount: 50,
+        deviceCount: 250
+      }
+    }
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async getBuildingStats(
     @Param('buildingId', ParseUUIDPipe) buildingId: string,
@@ -143,8 +207,20 @@ export class EnergyController {
 
   @Delete('readings/cleanup')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Clean up old energy readings' })
-  @ApiResponse({ status: 200, description: 'Old readings cleaned up successfully' })
+  @ApiOperation({ 
+    summary: 'Clean up old energy readings',
+    description: 'Remove leituras de energia antigas do banco de dados para economia de espaço'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Old readings cleaned up successfully',
+    schema: {
+      example: {
+        message: 'Old readings cleaned up successfully',
+        deletedCount: 1500
+      }
+    }
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async cleanupOldReadings(@Body() cleanupDto: CleanupReadingsDto) {
     const deletedCount = await this.energyService.cleanupOldReadings(

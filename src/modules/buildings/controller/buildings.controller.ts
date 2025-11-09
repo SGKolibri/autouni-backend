@@ -28,9 +28,37 @@ export class BuildingsController {
   constructor(private readonly buildingsService: BuildingsService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Criar novo prédio' })
-  @ApiResponse({ status: 201, description: 'Prédio criado com sucesso' })
-  @ApiResponse({ status: 400, description: 'Dados inválidos' })
+  @ApiOperation({ 
+    summary: 'Criar novo prédio',
+    description: 'Cria um novo prédio no sistema de gerenciamento'
+  })
+  @ApiResponse({ 
+    status: 201, 
+    description: 'Prédio criado com sucesso',
+    schema: {
+      example: {
+        id: 'uuid-building-123',
+        name: 'Prédio Central',
+        description: 'Prédio administrativo principal',
+        location: 'Campus Central',
+        totalEnergy: 0,
+        activeDevices: 0,
+        createdAt: '2025-01-11T10:00:00.000Z',
+        updatedAt: '2025-01-11T10:00:00.000Z'
+      }
+    }
+  })
+  @ApiResponse({ 
+    status: 400, 
+    description: 'Dados inválidos',
+    schema: {
+      example: {
+        statusCode: 400,
+        message: ['name should not be empty'],
+        error: 'Bad Request'
+      }
+    }
+  })
   async create(@Body() createBuildingDto: CreateBuildingDto) {
     return this.buildingsService.create(createBuildingDto);
   }
@@ -64,10 +92,35 @@ export class BuildingsController {
   }
 
   @Get(':id/stats')
-  @ApiOperation({ summary: 'Obter estatísticas do prédio' })
+  @ApiOperation({ 
+    summary: 'Obter estatísticas do prédio',
+    description: 'Retorna estatísticas agregadas incluindo total de andares, salas, dispositivos e energia'
+  })
   @ApiParam({ name: 'id', description: 'ID do prédio' })
-  @ApiResponse({ status: 200, description: 'Estatísticas retornadas' })
-  @ApiResponse({ status: 404, description: 'Prédio não encontrado' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Estatísticas retornadas',
+    schema: {
+      example: {
+        totalFloors: 5,
+        totalRooms: 50,
+        totalDevices: 150,
+        totalEnergy: 5000.50,
+        activeDevices: 120
+      }
+    }
+  })
+  @ApiResponse({ 
+    status: 404, 
+    description: 'Prédio não encontrado',
+    schema: {
+      example: {
+        statusCode: 404,
+        message: 'Building not found',
+        error: 'Not Found'
+      }
+    }
+  })
   async getStats(@Param('id') id: string) {
     return this.buildingsService.getStats(id);
   }
