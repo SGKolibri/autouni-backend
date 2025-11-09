@@ -28,12 +28,40 @@ export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Criar nova notificação' })
+  @ApiOperation({ 
+    summary: 'Criar nova notificação',
+    description: 'Cria uma nova notificação para um usuário específico'
+  })
   @ApiResponse({
     status: 201,
     description: 'Notificação criada com sucesso',
+    schema: {
+      example: {
+        id: 'uuid-notification-1',
+        userId: 'uuid-user-123',
+        type: 'WARNING',
+        title: 'Consumo Alto',
+        message: 'Consumo de energia acima do normal',
+        read: false,
+        metadata: {
+          deviceId: 'uuid-device-1',
+          threshold: 500
+        },
+        createdAt: '2025-01-11T10:00:00.000Z'
+      }
+    }
   })
-  @ApiResponse({ status: 400, description: 'Dados inválidos' })
+  @ApiResponse({ 
+    status: 400, 
+    description: 'Dados inválidos',
+    schema: {
+      example: {
+        statusCode: 400,
+        message: ['type must be a valid enum value'],
+        error: 'Bad Request'
+      }
+    }
+  })
   async create(@Body() createNotificationDto: CreateNotificationDto) {
     return this.notificationsService.create(createNotificationDto);
   }
@@ -91,13 +119,33 @@ export class NotificationsController {
   }
 
   @Patch(':id/read')
-  @ApiOperation({ summary: 'Marcar notificação como lida' })
+  @ApiOperation({ 
+    summary: 'Marcar notificação como lida',
+    description: 'Marca uma notificação específica como lida pelo usuário'
+  })
   @ApiParam({ name: 'id', description: 'ID da notificação' })
   @ApiResponse({
     status: 200,
     description: 'Notificação marcada como lida',
+    schema: {
+      example: {
+        id: 'uuid-notification-1',
+        read: true,
+        readAt: '2025-01-11T11:00:00.000Z'
+      }
+    }
   })
-  @ApiResponse({ status: 404, description: 'Notificação não encontrada' })
+  @ApiResponse({ 
+    status: 404, 
+    description: 'Notificação não encontrada',
+    schema: {
+      example: {
+        statusCode: 404,
+        message: 'Notification not found',
+        error: 'Not Found'
+      }
+    }
+  })
   async markAsRead(@Param('id') id: string) {
     return this.notificationsService.markAsRead(id);
   }
@@ -105,10 +153,17 @@ export class NotificationsController {
   @Patch('me/read-all')
   @ApiOperation({
     summary: 'Marcar todas as notificações do usuário como lidas',
+    description: 'Marca todas as notificações pendentes do usuário autenticado como lidas'
   })
   @ApiResponse({
     status: 200,
     description: 'Notificações marcadas como lidas',
+    schema: {
+      example: {
+        message: 'All notifications marked as read',
+        count: 15
+      }
+    }
   })
   async markAllAsRead(@Request() req: any) {
     return this.notificationsService.markAllAsRead(req.user);

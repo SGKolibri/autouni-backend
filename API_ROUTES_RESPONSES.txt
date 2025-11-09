@@ -1,0 +1,1520 @@
+================================================================================
+                    AUTOUNI BACKEND - API ROUTES & RESPONSES
+================================================================================
+Data: 09/11/2025
+Versão: 1.0.0
+Base URL: http://localhost:3000 (desenvolvimento) | https://autouni-api.onrender.com (produção)
+================================================================================
+
+LEGENDA:
+  [P] = Rota Pública (sem autenticação)
+  [A] = Requer Autenticação (Bearer Token JWT)
+  [ADMIN] = Requer role ADMIN
+  [COORD] = Requer role COORDINATOR
+  [TECH] = Requer role TECHNICIAN
+
+================================================================================
+                              1. HEALTH & WELCOME
+================================================================================
+
+1.1 GET /api
+    [P] API Welcome
+    Retorno:
+    {
+      "message": "Welcome to AutoUni API"
+    }
+
+1.2 GET /api/health
+    [P] Health Check - Verifica status da aplicação
+    Retorno:
+    {
+      "status": "ok",
+      "timestamp": "2025-01-11T10:30:00.000Z",
+      "uptime": 123.45,
+      "environment": "production"
+    }
+
+================================================================================
+                              2. AUTHENTICATION (AUTH)
+================================================================================
+
+2.1 POST /auth/login
+    [P] Realiza login do usuário
+    Body:
+    {
+      "email": "user@example.com",
+      "password": "senha123"
+    }
+    Retorno (200):
+    {
+      "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+      "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+      "user": {
+        "id": "uuid-user-123",
+        "email": "user@example.com",
+        "name": "João Silva",
+        "role": "ADMIN",
+        "createdAt": "2025-01-01T00:00:00.000Z"
+      }
+    }
+    Erros:
+    - 401: Credenciais inválidas
+
+2.2 POST /auth/register
+    [P] Registra um novo usuário
+    Body:
+    {
+      "email": "novo@example.com",
+      "password": "senha123",
+      "name": "Novo Usuário",
+      "cpf": "12345678900",
+      "role": "VIEWER"
+    }
+    Retorno (201):
+    {
+      "id": "uuid-user-456",
+      "email": "novo@example.com",
+      "name": "Novo Usuário",
+      "cpf": "12345678900",
+      "role": "VIEWER",
+      "createdAt": "2025-01-11T10:30:00.000Z"
+    }
+    Erros:
+    - 409: Email ou CPF já cadastrado
+
+2.3 POST /auth/refresh
+    [P] Renova o token de acesso
+    Body:
+    {
+      "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    }
+    Retorno (200):
+    {
+      "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+      "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    }
+    Erros:
+    - 401: Token inválido ou expirado
+
+2.4 POST /auth/logout
+    [A] Realiza logout do usuário
+    Retorno (200):
+    {
+      "message": "Logout realizado com sucesso"
+    }
+    Erros:
+    - 401: Não autorizado
+
+================================================================================
+                              3. USERS (USUÁRIOS)
+================================================================================
+
+3.1 POST /users
+    [A] Cria um novo usuário
+    Body:
+    {
+      "email": "user@example.com",
+      "password": "senha123",
+      "name": "Usuário Teste",
+      "cpf": "12345678900",
+      "role": "TECHNICIAN"
+    }
+    Retorno (201):
+    {
+      "id": "uuid-user-789",
+      "email": "user@example.com",
+      "name": "Usuário Teste",
+      "cpf": "12345678900",
+      "role": "TECHNICIAN",
+      "createdAt": "2025-01-11T10:30:00.000Z",
+      "updatedAt": "2025-01-11T10:30:00.000Z"
+    }
+
+3.2 GET /users
+    [A] Lista todos os usuários
+    Retorno (200):
+    [
+      {
+        "id": "uuid-user-123",
+        "email": "admin@example.com",
+        "name": "Admin User",
+        "cpf": "12345678900",
+        "role": "ADMIN",
+        "createdAt": "2025-01-01T00:00:00.000Z",
+        "updatedAt": "2025-01-01T00:00:00.000Z"
+      },
+      {
+        "id": "uuid-user-456",
+        "email": "tech@example.com",
+        "name": "Technician User",
+        "cpf": "98765432100",
+        "role": "TECHNICIAN",
+        "createdAt": "2025-01-02T00:00:00.000Z",
+        "updatedAt": "2025-01-02T00:00:00.000Z"
+      }
+    ]
+
+3.3 GET /users/:id
+    [A] Retorna um usuário pelo ID
+    Retorno (200):
+    {
+      "id": "uuid-user-123",
+      "email": "user@example.com",
+      "name": "João Silva",
+      "cpf": "12345678900",
+      "role": "ADMIN",
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "updatedAt": "2025-01-01T00:00:00.000Z"
+    }
+    Erros:
+    - 404: Usuário não encontrado
+
+3.4 PUT /users/:id
+    [A] Atualiza um usuário
+    Body:
+    {
+      "name": "João Silva Atualizado",
+      "email": "joao.novo@example.com"
+    }
+    Retorno (200):
+    {
+      "id": "uuid-user-123",
+      "email": "joao.novo@example.com",
+      "name": "João Silva Atualizado",
+      "cpf": "12345678900",
+      "role": "ADMIN",
+      "updatedAt": "2025-01-11T10:35:00.000Z"
+    }
+    Erros:
+    - 404: Usuário não encontrado
+
+3.5 DELETE /users/:id
+    [A] Remove um usuário
+    Retorno (200):
+    {
+      "id": "uuid-user-123",
+      "email": "user@example.com",
+      "name": "João Silva",
+      "deletedAt": "2025-01-11T10:40:00.000Z"
+    }
+    Erros:
+    - 404: Usuário não encontrado
+
+================================================================================
+                              4. BUILDINGS (PRÉDIOS)
+================================================================================
+
+4.1 POST /buildings
+    [A] Criar novo prédio
+    Body:
+    {
+      "name": "Prédio Central",
+      "description": "Prédio administrativo principal",
+      "location": "Campus Central"
+    }
+    Retorno (201):
+    {
+      "id": "uuid-building-123",
+      "name": "Prédio Central",
+      "description": "Prédio administrativo principal",
+      "location": "Campus Central",
+      "totalEnergy": 0,
+      "activeDevices": 0,
+      "createdAt": "2025-01-11T10:00:00.000Z",
+      "updatedAt": "2025-01-11T10:00:00.000Z"
+    }
+
+4.2 GET /buildings
+    [A] Listar todos os prédios
+    Retorno (200):
+    [
+      {
+        "id": "uuid-building-123",
+        "name": "Prédio Central",
+        "description": "Prédio administrativo principal",
+        "location": "Campus Central",
+        "totalEnergy": 1500.75,
+        "activeDevices": 25,
+        "createdAt": "2025-01-11T10:00:00.000Z",
+        "updatedAt": "2025-01-11T10:00:00.000Z"
+      }
+    ]
+
+4.3 GET /buildings/:id
+    [A] Buscar prédio por ID
+    Retorno (200):
+    {
+      "id": "uuid-building-123",
+      "name": "Prédio Central",
+      "description": "Prédio administrativo principal",
+      "location": "Campus Central",
+      "totalEnergy": 1500.75,
+      "activeDevices": 25,
+      "createdAt": "2025-01-11T10:00:00.000Z",
+      "updatedAt": "2025-01-11T10:00:00.000Z"
+    }
+    Erros:
+    - 404: Prédio não encontrado
+
+4.4 GET /buildings/:id/details
+    [A] Buscar prédio com andares e salas
+    Retorno (200):
+    {
+      "id": "uuid-building-123",
+      "name": "Prédio Central",
+      "description": "Prédio administrativo principal",
+      "location": "Campus Central",
+      "totalEnergy": 1500.75,
+      "activeDevices": 25,
+      "floors": [
+        {
+          "id": "uuid-floor-1",
+          "name": "1º Andar",
+          "number": 1,
+          "rooms": [
+            {
+              "id": "uuid-room-1",
+              "name": "Sala 101",
+              "capacity": 30,
+              "type": "CLASSROOM"
+            }
+          ]
+        }
+      ],
+      "createdAt": "2025-01-11T10:00:00.000Z",
+      "updatedAt": "2025-01-11T10:00:00.000Z"
+    }
+    Erros:
+    - 404: Prédio não encontrado
+
+4.5 GET /buildings/:id/stats
+    [A] Obter estatísticas do prédio
+    Retorno (200):
+    {
+      "totalFloors": 5,
+      "totalRooms": 50,
+      "totalDevices": 150,
+      "totalEnergy": 5000.50,
+      "activeDevices": 120
+    }
+    Erros:
+    - 404: Prédio não encontrado
+
+4.6 PUT /buildings/:id
+    [A] Atualizar prédio
+    Body:
+    {
+      "name": "Prédio Central Renovado",
+      "description": "Nova descrição"
+    }
+    Retorno (200):
+    {
+      "id": "uuid-building-123",
+      "name": "Prédio Central Renovado",
+      "description": "Nova descrição",
+      "location": "Campus Central",
+      "updatedAt": "2025-01-11T11:00:00.000Z"
+    }
+    Erros:
+    - 404: Prédio não encontrado
+
+4.7 DELETE /buildings/:id
+    [A] Deletar prédio
+    Retorno (200):
+    {
+      "id": "uuid-building-123",
+      "name": "Prédio Central",
+      "deletedAt": "2025-01-11T11:30:00.000Z"
+    }
+    Erros:
+    - 404: Prédio não encontrado
+
+================================================================================
+                              5. FLOORS (ANDARES)
+================================================================================
+
+5.1 POST /floors
+    [A] Criar novo andar
+    Body:
+    {
+      "buildingId": "uuid-building-123",
+      "name": "1º Andar",
+      "number": 1,
+      "description": "Andar térreo"
+    }
+    Retorno (201):
+    {
+      "id": "uuid-floor-1",
+      "buildingId": "uuid-building-123",
+      "name": "1º Andar",
+      "number": 1,
+      "description": "Andar térreo",
+      "createdAt": "2025-01-11T10:00:00.000Z",
+      "updatedAt": "2025-01-11T10:00:00.000Z"
+    }
+
+5.2 GET /floors
+    [A] Listar todos os andares
+    Retorno (200):
+    [
+      {
+        "id": "uuid-floor-1",
+        "buildingId": "uuid-building-123",
+        "name": "1º Andar",
+        "number": 1,
+        "description": "Andar térreo",
+        "createdAt": "2025-01-11T10:00:00.000Z"
+      }
+    ]
+
+5.3 GET /floors/building/:buildingId
+    [A] Listar andares de um prédio
+    Retorno (200):
+    [
+      {
+        "id": "uuid-floor-1",
+        "buildingId": "uuid-building-123",
+        "name": "1º Andar",
+        "number": 1
+      },
+      {
+        "id": "uuid-floor-2",
+        "buildingId": "uuid-building-123",
+        "name": "2º Andar",
+        "number": 2
+      }
+    ]
+
+5.4 GET /floors/:id
+    [A] Buscar andar por ID
+    Retorno (200):
+    {
+      "id": "uuid-floor-1",
+      "buildingId": "uuid-building-123",
+      "name": "1º Andar",
+      "number": 1,
+      "description": "Andar térreo",
+      "createdAt": "2025-01-11T10:00:00.000Z"
+    }
+    Erros:
+    - 404: Andar não encontrado
+
+5.5 GET /floors/:id/details
+    [A] Buscar andar com salas e dispositivos
+    Retorno (200):
+    {
+      "id": "uuid-floor-1",
+      "name": "1º Andar",
+      "number": 1,
+      "building": {
+        "id": "uuid-building-123",
+        "name": "Prédio Central"
+      },
+      "rooms": [
+        {
+          "id": "uuid-room-1",
+          "name": "Sala 101",
+          "capacity": 30,
+          "type": "CLASSROOM",
+          "devices": [
+            {
+              "id": "uuid-device-1",
+              "name": "Luz Principal",
+              "type": "LIGHT",
+              "status": "ON"
+            }
+          ]
+        }
+      ]
+    }
+    Erros:
+    - 404: Andar não encontrado
+
+5.6 PUT /floors/:id
+    [A] Atualizar andar
+    Body:
+    {
+      "name": "Térreo",
+      "description": "Andar térreo renovado"
+    }
+    Retorno (200):
+    {
+      "id": "uuid-floor-1",
+      "name": "Térreo",
+      "description": "Andar térreo renovado",
+      "updatedAt": "2025-01-11T11:00:00.000Z"
+    }
+    Erros:
+    - 404: Andar não encontrado
+
+5.7 DELETE /floors/:id
+    [A] Deletar andar
+    Retorno (200):
+    {
+      "id": "uuid-floor-1",
+      "deletedAt": "2025-01-11T11:30:00.000Z"
+    }
+    Erros:
+    - 404: Andar não encontrado
+
+================================================================================
+                              6. ROOMS (SALAS)
+================================================================================
+
+6.1 POST /rooms
+    [A] Criar nova sala
+    Body:
+    {
+      "floorId": "uuid-floor-1",
+      "name": "Sala 101",
+      "capacity": 30,
+      "type": "CLASSROOM",
+      "description": "Sala de aula padrão"
+    }
+    Retorno (201):
+    {
+      "id": "uuid-room-1",
+      "floorId": "uuid-floor-1",
+      "name": "Sala 101",
+      "capacity": 30,
+      "type": "CLASSROOM",
+      "description": "Sala de aula padrão",
+      "createdAt": "2025-01-11T10:00:00.000Z",
+      "updatedAt": "2025-01-11T10:00:00.000Z"
+    }
+
+6.2 GET /rooms
+    [A] Listar todas as salas
+    Retorno (200):
+    [
+      {
+        "id": "uuid-room-1",
+        "floorId": "uuid-floor-1",
+        "name": "Sala 101",
+        "capacity": 30,
+        "type": "CLASSROOM",
+        "description": "Sala de aula padrão"
+      }
+    ]
+
+6.3 GET /rooms/floor/:floorId
+    [A] Listar salas de um andar
+    Retorno (200):
+    [
+      {
+        "id": "uuid-room-1",
+        "name": "Sala 101",
+        "capacity": 30,
+        "type": "CLASSROOM"
+      },
+      {
+        "id": "uuid-room-2",
+        "name": "Sala 102",
+        "capacity": 25,
+        "type": "LAB"
+      }
+    ]
+
+6.4 GET /rooms/type/:type
+    [A] Listar salas por tipo
+    Tipos disponíveis: CLASSROOM, LAB, OFFICE, AUDITORIUM, LIBRARY, OTHER
+    Retorno (200):
+    [
+      {
+        "id": "uuid-room-1",
+        "name": "Sala 101",
+        "type": "CLASSROOM",
+        "capacity": 30
+      }
+    ]
+
+6.5 GET /rooms/:id
+    [A] Buscar sala por ID
+    Retorno (200):
+    {
+      "id": "uuid-room-1",
+      "floorId": "uuid-floor-1",
+      "name": "Sala 101",
+      "capacity": 30,
+      "type": "CLASSROOM",
+      "description": "Sala de aula padrão",
+      "createdAt": "2025-01-11T10:00:00.000Z"
+    }
+    Erros:
+    - 404: Sala não encontrada
+
+6.6 GET /rooms/:id/details
+    [A] Buscar sala com dispositivos
+    Retorno (200):
+    {
+      "id": "uuid-room-1",
+      "name": "Sala 101",
+      "capacity": 30,
+      "type": "CLASSROOM",
+      "floor": {
+        "id": "uuid-floor-1",
+        "name": "1º Andar",
+        "building": {
+          "id": "uuid-building-123",
+          "name": "Prédio Central"
+        }
+      },
+      "devices": [
+        {
+          "id": "uuid-device-1",
+          "name": "Luz Principal",
+          "type": "LIGHT",
+          "status": "ON",
+          "online": true
+        },
+        {
+          "id": "uuid-device-2",
+          "name": "Ar Condicionado",
+          "type": "AC",
+          "status": "OFF",
+          "online": true
+        }
+      ]
+    }
+    Erros:
+    - 404: Sala não encontrada
+
+6.7 PUT /rooms/:id
+    [A] Atualizar sala
+    Body:
+    {
+      "name": "Sala 101-A",
+      "capacity": 35
+    }
+    Retorno (200):
+    {
+      "id": "uuid-room-1",
+      "name": "Sala 101-A",
+      "capacity": 35,
+      "updatedAt": "2025-01-11T11:00:00.000Z"
+    }
+    Erros:
+    - 404: Sala não encontrada
+
+6.8 DELETE /rooms/:id
+    [A] Deletar sala
+    Retorno (200):
+    {
+      "id": "uuid-room-1",
+      "deletedAt": "2025-01-11T11:30:00.000Z"
+    }
+    Erros:
+    - 404: Sala não encontrada
+
+================================================================================
+                              7. DEVICES (DISPOSITIVOS)
+================================================================================
+
+7.1 POST /devices
+    [A] Criar novo dispositivo
+    Body:
+    {
+      "roomId": "uuid-room-1",
+      "name": "Luz Principal",
+      "type": "LIGHT",
+      "status": "OFF",
+      "mqttTopic": "devices/light-101",
+      "metadata": {
+        "brand": "Philips",
+        "model": "LED Smart"
+      }
+    }
+    Retorno (201):
+    {
+      "id": "uuid-device-1",
+      "roomId": "uuid-room-1",
+      "name": "Luz Principal",
+      "type": "LIGHT",
+      "status": "OFF",
+      "online": false,
+      "mqttTopic": "devices/light-101",
+      "metadata": {
+        "brand": "Philips",
+        "model": "LED Smart"
+      },
+      "createdAt": "2025-01-11T10:00:00.000Z",
+      "updatedAt": "2025-01-11T10:00:00.000Z"
+    }
+
+7.2 GET /devices
+    [A] Listar todos os dispositivos
+    Retorno (200):
+    [
+      {
+        "id": "uuid-device-1",
+        "roomId": "uuid-room-1",
+        "name": "Luz Principal",
+        "type": "LIGHT",
+        "status": "ON",
+        "online": true,
+        "lastSeen": "2025-01-11T10:30:00.000Z"
+      }
+    ]
+
+7.3 GET /devices/stats
+    [A] Obter estatísticas de dispositivos
+    Retorno (200):
+    {
+      "total": 150,
+      "online": 120,
+      "offline": 30,
+      "byStatus": {
+        "ON": 80,
+        "OFF": 40,
+        "STANDBY": 20,
+        "ERROR": 10
+      },
+      "byType": {
+        "LIGHT": 50,
+        "AC": 30,
+        "PROJECTOR": 20,
+        "SENSOR": 40,
+        "OTHER": 10
+      }
+    }
+
+7.4 GET /devices/room/:roomId
+    [A] Listar dispositivos por sala
+    Retorno (200):
+    [
+      {
+        "id": "uuid-device-1",
+        "name": "Luz Principal",
+        "type": "LIGHT",
+        "status": "ON",
+        "online": true
+      }
+    ]
+
+7.5 GET /devices/status/:status
+    [A] Listar dispositivos por status
+    Status disponíveis: ON, OFF, STANDBY, ERROR
+    Retorno (200):
+    [
+      {
+        "id": "uuid-device-1",
+        "name": "Luz Principal",
+        "status": "ON",
+        "type": "LIGHT"
+      }
+    ]
+
+7.6 GET /devices/:id
+    [A] Buscar dispositivo por ID
+    Retorno (200):
+    {
+      "id": "uuid-device-1",
+      "roomId": "uuid-room-1",
+      "name": "Luz Principal",
+      "type": "LIGHT",
+      "status": "ON",
+      "online": true,
+      "mqttTopic": "devices/light-101",
+      "metadata": {
+        "brand": "Philips",
+        "model": "LED Smart"
+      },
+      "lastSeen": "2025-01-11T10:30:00.000Z",
+      "createdAt": "2025-01-11T10:00:00.000Z"
+    }
+    Erros:
+    - 404: Dispositivo não encontrado
+
+7.7 PUT /devices/:id
+    [A] Atualizar dispositivo
+    Body:
+    {
+      "name": "Luz Principal Renovada",
+      "metadata": {
+        "brand": "Philips",
+        "model": "LED Smart Pro"
+      }
+    }
+    Retorno (200):
+    {
+      "id": "uuid-device-1",
+      "name": "Luz Principal Renovada",
+      "metadata": {
+        "brand": "Philips",
+        "model": "LED Smart Pro"
+      },
+      "updatedAt": "2025-01-11T11:00:00.000Z"
+    }
+    Erros:
+    - 404: Dispositivo não encontrado
+
+7.8 PUT /devices/:id/status
+    [A] Atualizar status do dispositivo
+    Body:
+    {
+      "status": "ON"
+    }
+    Retorno (200):
+    {
+      "id": "uuid-device-1",
+      "name": "Luz Principal",
+      "status": "ON",
+      "updatedAt": "2025-01-11T11:00:00.000Z"
+    }
+
+7.9 PUT /devices/:id/online
+    [A] Atualizar status online do dispositivo
+    Body:
+    {
+      "online": true
+    }
+    Retorno (200):
+    {
+      "id": "uuid-device-1",
+      "name": "Luz Principal",
+      "online": true,
+      "lastSeen": "2025-01-11T11:00:00.000Z"
+    }
+
+7.10 DELETE /devices/:id
+     [A] Deletar dispositivo
+     Retorno (204): No Content
+     Erros:
+     - 404: Dispositivo não encontrado
+
+================================================================================
+                              8. ENERGY (ENERGIA)
+================================================================================
+
+8.1 POST /energy/readings
+    [A] Criar nova leitura de energia
+    Body:
+    {
+      "deviceId": "uuid-device-1",
+      "valueWh": 150.5,
+      "voltage": 220,
+      "current": 0.68
+    }
+    Retorno (201):
+    {
+      "id": "uuid-reading-1",
+      "deviceId": "uuid-device-1",
+      "valueWh": 150.5,
+      "voltage": 220,
+      "current": 0.68,
+      "timestamp": "2025-01-11T10:00:00.000Z",
+      "createdAt": "2025-01-11T10:00:00.000Z"
+    }
+
+8.2 GET /energy/devices/:deviceId/readings
+    [A] Obter leituras de energia de um dispositivo
+    Query params: ?from=2025-01-01&to=2025-01-31&limit=100
+    Retorno (200):
+    [
+      {
+        "id": "uuid-reading-1",
+        "deviceId": "uuid-device-1",
+        "valueWh": 150.5,
+        "voltage": 220,
+        "current": 0.68,
+        "timestamp": "2025-01-11T10:00:00.000Z"
+      }
+    ]
+
+8.3 GET /energy/devices/:deviceId/stats
+    [A] Obter estatísticas de energia de um dispositivo
+    Query params: ?from=2025-01-01&to=2025-01-31
+    Retorno (200):
+    {
+      "totalKwh": 125.5,
+      "count": 500,
+      "avgWh": 251.0,
+      "maxWh": 500.0,
+      "minWh": 50.0,
+      "period": {
+        "from": "2025-01-01T00:00:00.000Z",
+        "to": "2025-01-31T23:59:59.000Z"
+      }
+    }
+
+8.4 GET /energy/rooms/:roomId/readings
+    [A] Obter leituras de energia de uma sala
+    Query params: ?from=2025-01-01&to=2025-01-31&limit=100
+    Retorno (200):
+    [
+      {
+        "id": "uuid-reading-1",
+        "deviceId": "uuid-device-1",
+        "device": {
+          "name": "Luz Principal",
+          "type": "LIGHT"
+        },
+        "valueWh": 150.5,
+        "timestamp": "2025-01-11T10:00:00.000Z"
+      }
+    ]
+
+8.5 GET /energy/rooms/:roomId/stats
+    [A] Obter estatísticas de energia de uma sala
+    Query params: ?from=2025-01-01&to=2025-01-31
+    Retorno (200):
+    {
+      "totalKwh": 500.75,
+      "count": 2000,
+      "avgWh": 250.375,
+      "maxWh": 800.0,
+      "minWh": 10.0,
+      "deviceCount": 5
+    }
+
+8.6 GET /energy/floors/:floorId/stats
+    [A] Obter estatísticas de energia de um andar
+    Query params: ?from=2025-01-01&to=2025-01-31
+    Retorno (200):
+    {
+      "totalKwh": 2500.50,
+      "count": 10000,
+      "avgWh": 250.05,
+      "maxWh": 1000.0,
+      "minWh": 5.0,
+      "roomCount": 10,
+      "deviceCount": 50
+    }
+
+8.7 GET /energy/buildings/:buildingId/stats
+    [A] Obter estatísticas de energia de um prédio
+    Query params: ?from=2025-01-01&to=2025-01-31
+    Retorno (200):
+    {
+      "totalKwh": 12500.00,
+      "count": 50000,
+      "avgWh": 250.0,
+      "maxWh": 1500.0,
+      "minWh": 1.0,
+      "floorCount": 5,
+      "roomCount": 50,
+      "deviceCount": 250
+    }
+
+8.8 DELETE /energy/readings/cleanup
+    [A] Limpar leituras antigas de energia
+    Body:
+    {
+      "daysToKeep": 90
+    }
+    Retorno (200):
+    {
+      "message": "Old readings cleaned up successfully",
+      "deletedCount": 1500
+    }
+
+================================================================================
+                              9. AUTOMATIONS (AUTOMAÇÕES)
+================================================================================
+
+9.1 POST /automations
+    [A] Criar nova automação
+    Body:
+    {
+      "name": "Desligar luzes à noite",
+      "description": "Desliga todas as luzes às 22h",
+      "triggerType": "SCHEDULE",
+      "triggerValue": "0 22 * * *",
+      "action": {
+        "type": "device_control",
+        "deviceIds": ["uuid-device-1", "uuid-device-2"],
+        "command": "OFF"
+      },
+      "enabled": true,
+      "creatorId": "uuid-user-123"
+    }
+    Retorno (201):
+    {
+      "id": "uuid-automation-1",
+      "name": "Desligar luzes à noite",
+      "description": "Desliga todas as luzes às 22h",
+      "triggerType": "SCHEDULE",
+      "triggerValue": "0 22 * * *",
+      "action": {
+        "type": "device_control",
+        "deviceIds": ["uuid-device-1", "uuid-device-2"],
+        "command": "OFF"
+      },
+      "enabled": true,
+      "creatorId": "uuid-user-123",
+      "createdAt": "2025-01-11T10:00:00.000Z"
+    }
+
+9.2 GET /automations
+    [A] Listar todas as automações
+    Retorno (200):
+    [
+      {
+        "id": "uuid-automation-1",
+        "name": "Desligar luzes à noite",
+        "description": "Desliga todas as luzes às 22h",
+        "triggerType": "SCHEDULE",
+        "enabled": true,
+        "lastExecution": "2025-01-10T22:00:00.000Z"
+      }
+    ]
+
+9.3 GET /automations/stats
+    [A] Obter estatísticas de automações
+    Retorno (200):
+    {
+      "total": 50,
+      "enabled": 40,
+      "disabled": 10,
+      "byTriggerType": {
+        "SCHEDULE": 30,
+        "CONDITION": 15,
+        "MANUAL": 5
+      },
+      "executionsToday": 120,
+      "successRate": 95.5
+    }
+
+9.4 GET /automations/enabled
+    [A] Listar automações habilitadas
+    Retorno (200):
+    [
+      {
+        "id": "uuid-automation-1",
+        "name": "Desligar luzes à noite",
+        "triggerType": "SCHEDULE",
+        "enabled": true
+      }
+    ]
+
+9.5 GET /automations/creator/:creatorId
+    [A] Listar automações por criador
+    Retorno (200):
+    [
+      {
+        "id": "uuid-automation-1",
+        "name": "Desligar luzes à noite",
+        "creatorId": "uuid-user-123",
+        "createdAt": "2025-01-11T10:00:00.000Z"
+      }
+    ]
+
+9.6 GET /automations/:id
+    [A] Buscar automação por ID
+    Retorno (200):
+    {
+      "id": "uuid-automation-1",
+      "name": "Desligar luzes à noite",
+      "description": "Desliga todas as luzes às 22h",
+      "triggerType": "SCHEDULE",
+      "triggerValue": "0 22 * * *",
+      "action": {
+        "type": "device_control",
+        "deviceIds": ["uuid-device-1"],
+        "command": "OFF"
+      },
+      "enabled": true,
+      "creatorId": "uuid-user-123",
+      "lastExecution": "2025-01-10T22:00:00.000Z",
+      "createdAt": "2025-01-11T10:00:00.000Z"
+    }
+    Erros:
+    - 404: Automação não encontrada
+
+9.7 GET /automations/:id/history
+    [A] Obter histórico de execuções
+    Query params: ?limit=50
+    Retorno (200):
+    [
+      {
+        "id": "uuid-history-1",
+        "automationId": "uuid-automation-1",
+        "executedAt": "2025-01-11T22:00:00.000Z",
+        "success": true,
+        "result": {
+          "devicesAffected": 5,
+          "message": "Luzes desligadas com sucesso"
+        }
+      },
+      {
+        "id": "uuid-history-2",
+        "automationId": "uuid-automation-1",
+        "executedAt": "2025-01-10T22:00:00.000Z",
+        "success": false,
+        "error": "MQTT connection failed"
+      }
+    ]
+    Erros:
+    - 404: Automação não encontrada
+
+9.8 PUT /automations/:id
+    [A] Atualizar automação
+    Body:
+    {
+      "name": "Desligar luzes às 23h",
+      "triggerValue": "0 23 * * *"
+    }
+    Retorno (200):
+    {
+      "id": "uuid-automation-1",
+      "name": "Desligar luzes às 23h",
+      "triggerValue": "0 23 * * *",
+      "updatedAt": "2025-01-11T11:00:00.000Z"
+    }
+    Erros:
+    - 404: Automação não encontrada
+
+9.9 PATCH /automations/:id/toggle
+    [A] Habilitar/desabilitar automação
+    Body:
+    {
+      "enabled": false
+    }
+    Retorno (200):
+    {
+      "id": "uuid-automation-1",
+      "name": "Desligar luzes à noite",
+      "enabled": false,
+      "updatedAt": "2025-01-11T11:00:00.000Z"
+    }
+    Erros:
+    - 404: Automação não encontrada
+
+9.10 POST /automations/:id/execute
+     [A] Executar automação manualmente
+     Retorno (200):
+     {
+       "message": "Automation executed successfully",
+       "result": {
+         "devicesAffected": 5,
+         "timestamp": "2025-01-11T11:30:00.000Z"
+       }
+     }
+     Erros:
+     - 404: Automação não encontrada
+     - 400: Automação está desabilitada
+
+9.11 DELETE /automations/:id
+     [A] Deletar automação
+     Retorno (204): No Content
+     Erros:
+     - 404: Automação não encontrada
+
+================================================================================
+                              10. NOTIFICATIONS (NOTIFICAÇÕES)
+================================================================================
+
+10.1 POST /notifications
+     [A] Criar nova notificação
+     Body:
+     {
+       "userId": "uuid-user-123",
+       "type": "WARNING",
+       "title": "Consumo Alto",
+       "message": "Consumo de energia acima do normal",
+       "metadata": {
+         "deviceId": "uuid-device-1",
+         "threshold": 500
+       }
+     }
+     Retorno (201):
+     {
+       "id": "uuid-notification-1",
+       "userId": "uuid-user-123",
+       "type": "WARNING",
+       "title": "Consumo Alto",
+       "message": "Consumo de energia acima do normal",
+       "read": false,
+       "metadata": {
+         "deviceId": "uuid-device-1",
+         "threshold": 500
+       },
+       "createdAt": "2025-01-11T10:00:00.000Z"
+     }
+
+10.2 GET /notifications
+     [A] Listar todas as notificações
+     Retorno (200):
+     [
+       {
+         "id": "uuid-notification-1",
+         "userId": "uuid-user-123",
+         "type": "WARNING",
+         "title": "Consumo Alto",
+         "message": "Consumo de energia acima do normal",
+         "read": false,
+         "createdAt": "2025-01-11T10:00:00.000Z"
+       }
+     ]
+
+10.3 GET /notifications/me
+     [A] Listar notificações do usuário autenticado
+     Retorno (200):
+     [
+       {
+         "id": "uuid-notification-1",
+         "type": "WARNING",
+         "title": "Consumo Alto",
+         "message": "Consumo de energia acima do normal",
+         "read": false,
+         "createdAt": "2025-01-11T10:00:00.000Z"
+       }
+     ]
+
+10.4 GET /notifications/me/unread
+     [A] Listar notificações não lidas do usuário
+     Retorno (200):
+     [
+       {
+         "id": "uuid-notification-1",
+         "type": "WARNING",
+         "title": "Consumo Alto",
+         "read": false,
+         "createdAt": "2025-01-11T10:00:00.000Z"
+       }
+     ]
+
+10.5 GET /notifications/user/:userId
+     [A] Listar notificações de um usuário
+     Retorno (200):
+     [
+       {
+         "id": "uuid-notification-1",
+         "userId": "uuid-user-123",
+         "type": "INFO",
+         "title": "Manutenção Agendada",
+         "createdAt": "2025-01-11T10:00:00.000Z"
+       }
+     ]
+
+10.6 GET /notifications/:id
+     [A] Buscar notificação por ID
+     Retorno (200):
+     {
+       "id": "uuid-notification-1",
+       "userId": "uuid-user-123",
+       "type": "WARNING",
+       "title": "Consumo Alto",
+       "message": "Consumo de energia acima do normal",
+       "read": false,
+       "metadata": {
+         "deviceId": "uuid-device-1"
+       },
+       "createdAt": "2025-01-11T10:00:00.000Z"
+     }
+     Erros:
+     - 404: Notificação não encontrada
+
+10.7 PATCH /notifications/:id/read
+     [A] Marcar notificação como lida
+     Retorno (200):
+     {
+       "id": "uuid-notification-1",
+       "read": true,
+       "readAt": "2025-01-11T11:00:00.000Z"
+     }
+     Erros:
+     - 404: Notificação não encontrada
+
+10.8 PATCH /notifications/me/read-all
+     [A] Marcar todas as notificações como lidas
+     Retorno (200):
+     {
+       "message": "All notifications marked as read",
+       "count": 15
+     }
+
+10.9 DELETE /notifications/:id
+     [A] Deletar notificação
+     Retorno (200):
+     {
+       "id": "uuid-notification-1",
+       "deletedAt": "2025-01-11T11:30:00.000Z"
+     }
+     Erros:
+     - 404: Notificação não encontrada
+
+================================================================================
+                              11. REPORTS (RELATÓRIOS)
+================================================================================
+
+11.1 POST /reports
+     [A] Criar novo relatório
+     Body:
+     {
+       "type": "ENERGY_CONSUMPTION",
+       "format": "PDF",
+       "title": "Consumo Mensal - Janeiro 2025",
+       "description": "Relatório de consumo energético do mês",
+       "filters": {
+         "buildingId": "uuid-building-123",
+         "startDate": "2025-01-01",
+         "endDate": "2025-01-31"
+       },
+       "creatorId": "uuid-user-123"
+     }
+     Retorno (201):
+     {
+       "id": "uuid-report-1",
+       "type": "ENERGY_CONSUMPTION",
+       "format": "PDF",
+       "title": "Consumo Mensal - Janeiro 2025",
+       "description": "Relatório de consumo energético do mês",
+       "status": "PENDING",
+       "filters": {
+         "buildingId": "uuid-building-123",
+         "startDate": "2025-01-01",
+         "endDate": "2025-01-31"
+       },
+       "creatorId": "uuid-user-123",
+       "createdAt": "2025-01-11T10:00:00.000Z"
+     }
+
+11.2 GET /reports
+     [A] Listar todos os relatórios
+     Retorno (200):
+     [
+       {
+         "id": "uuid-report-1",
+         "type": "ENERGY_CONSUMPTION",
+         "format": "PDF",
+         "title": "Consumo Mensal - Janeiro 2025",
+         "status": "COMPLETED",
+         "fileUrl": "https://storage.com/reports/report-1.pdf",
+         "createdAt": "2025-01-11T10:00:00.000Z"
+       }
+     ]
+
+11.3 GET /reports/me
+     [A] Listar relatórios do usuário autenticado
+     Retorno (200):
+     [
+       {
+         "id": "uuid-report-1",
+         "type": "ENERGY_CONSUMPTION",
+         "title": "Consumo Mensal - Janeiro 2025",
+         "status": "COMPLETED",
+         "createdAt": "2025-01-11T10:00:00.000Z"
+       }
+     ]
+
+11.4 GET /reports/type/:type
+     [A] Listar relatórios por tipo
+     Tipos: ENERGY_CONSUMPTION, DEVICE_STATUS, ROOM_USAGE, INCIDENTS
+     Retorno (200):
+     [
+       {
+         "id": "uuid-report-1",
+         "type": "ENERGY_CONSUMPTION",
+         "title": "Consumo Mensal",
+         "status": "COMPLETED"
+       }
+     ]
+
+11.5 GET /reports/status/:status
+     [A] Listar relatórios por status
+     Status: PENDING, PROCESSING, COMPLETED, FAILED
+     Retorno (200):
+     [
+       {
+         "id": "uuid-report-1",
+         "title": "Consumo Mensal",
+         "status": "COMPLETED",
+         "completedAt": "2025-01-11T10:30:00.000Z"
+       }
+     ]
+
+11.6 GET /reports/creator/:creatorId
+     [A] Listar relatórios por criador
+     Retorno (200):
+     [
+       {
+         "id": "uuid-report-1",
+         "title": "Consumo Mensal",
+         "creatorId": "uuid-user-123",
+         "createdAt": "2025-01-11T10:00:00.000Z"
+       }
+     ]
+
+11.7 GET /reports/:id
+     [A] Buscar relatório por ID
+     Retorno (200):
+     {
+       "id": "uuid-report-1",
+       "type": "ENERGY_CONSUMPTION",
+       "format": "PDF",
+       "title": "Consumo Mensal - Janeiro 2025",
+       "description": "Relatório de consumo energético do mês",
+       "status": "COMPLETED",
+       "fileUrl": "https://storage.com/reports/report-1.pdf",
+       "filters": {
+         "buildingId": "uuid-building-123",
+         "startDate": "2025-01-01",
+         "endDate": "2025-01-31"
+       },
+       "creatorId": "uuid-user-123",
+       "createdAt": "2025-01-11T10:00:00.000Z",
+       "completedAt": "2025-01-11T10:30:00.000Z"
+     }
+     Erros:
+     - 404: Relatório não encontrado
+
+11.8 PUT /reports/:id
+     [A] Atualizar relatório
+     Body:
+     {
+       "title": "Consumo Mensal - Janeiro 2025 (Revisado)",
+       "description": "Nova descrição"
+     }
+     Retorno (200):
+     {
+       "id": "uuid-report-1",
+       "title": "Consumo Mensal - Janeiro 2025 (Revisado)",
+       "description": "Nova descrição",
+       "updatedAt": "2025-01-11T11:00:00.000Z"
+     }
+     Erros:
+     - 404: Relatório não encontrado
+
+11.9 PATCH /reports/:id/status
+     [A] Atualizar status do relatório
+     Body:
+     {
+       "status": "COMPLETED",
+       "fileUrl": "https://storage.com/reports/report-1.pdf"
+     }
+     Retorno (200):
+     {
+       "id": "uuid-report-1",
+       "status": "COMPLETED",
+       "fileUrl": "https://storage.com/reports/report-1.pdf",
+       "completedAt": "2025-01-11T10:30:00.000Z"
+     }
+     Erros:
+     - 404: Relatório não encontrado
+
+11.10 DELETE /reports/:id
+      [A] Deletar relatório
+      Retorno (200):
+      {
+        "id": "uuid-report-1",
+        "deletedAt": "2025-01-11T11:30:00.000Z"
+      }
+      Erros:
+      - 404: Relatório não encontrado
+
+================================================================================
+                              12. TIPOS DE DADOS (ENUMS)
+================================================================================
+
+UserRole:
+  - ADMIN: Administrador do sistema
+  - COORDINATOR: Coordenador de área
+  - TECHNICIAN: Técnico de manutenção
+  - VIEWER: Visualizador (somente leitura)
+
+RoomType:
+  - CLASSROOM: Sala de aula
+  - LAB: Laboratório
+  - OFFICE: Escritório
+  - AUDITORIUM: Auditório
+  - LIBRARY: Biblioteca
+  - OTHER: Outro
+
+DeviceType:
+  - LIGHT: Luz/Iluminação
+  - AC: Ar condicionado
+  - PROJECTOR: Projetor
+  - SPEAKER: Alto-falante
+  - LOCK: Fechadura/Tranca
+  - SENSOR: Sensor
+  - OTHER: Outro
+
+DeviceStatus:
+  - ON: Ligado
+  - OFF: Desligado
+  - STANDBY: Em espera
+  - ERROR: Erro
+
+TriggerType:
+  - SCHEDULE: Agendado (cron)
+  - CONDITION: Baseado em condição
+  - MANUAL: Execução manual
+
+NotificationType:
+  - INFO: Informação
+  - WARNING: Aviso
+  - ERROR: Erro
+  - SUCCESS: Sucesso
+
+ReportType:
+  - ENERGY_CONSUMPTION: Consumo de energia
+  - DEVICE_STATUS: Status de dispositivos
+  - ROOM_USAGE: Uso de salas
+  - INCIDENTS: Incidentes
+
+ReportFormat:
+  - PDF: Formato PDF
+  - CSV: Formato CSV
+  - XLSX: Formato Excel
+
+ReportStatus:
+  - PENDING: Pendente
+  - PROCESSING: Processando
+  - COMPLETED: Concluído
+  - FAILED: Falhou
+
+================================================================================
+                              13. CÓDIGOS DE STATUS HTTP
+================================================================================
+
+200 OK: Requisição bem-sucedida
+201 Created: Recurso criado com sucesso
+204 No Content: Requisição bem-sucedida sem conteúdo de retorno
+400 Bad Request: Dados inválidos na requisição
+401 Unauthorized: Não autenticado ou token inválido
+403 Forbidden: Sem permissão para acessar o recurso
+404 Not Found: Recurso não encontrado
+409 Conflict: Conflito (ex: email já cadastrado)
+500 Internal Server Error: Erro interno do servidor
+
+================================================================================
+                              14. OBSERVAÇÕES IMPORTANTES
+================================================================================
+
+1. AUTENTICAÇÃO:
+   - Todas as rotas marcadas com [A] requerem header:
+     Authorization: Bearer {accessToken}
+
+2. MQTT (Opcional):
+   - Se MQTT_URL não estiver configurado, funcionalidades IoT são desabilitadas
+   - Dispositivos físicos não receberão comandos
+   - Leituras de sensores devem ser feitas via API
+
+3. WEBSOCKET:
+   - Conexão: ws://localhost:3000 ou wss://autouni-api.onrender.com
+   - Eventos em tempo real:
+     * device.status: Mudança de status de dispositivo
+     * device.online: Status de conexão de dispositivo
+     * energy.reading: Nova leitura de energia
+     * mqtt.raw: Mensagem MQTT bruta
+
+4. PAGINAÇÃO:
+   - Algumas rotas suportam query params: ?limit=100&offset=0
+   - Padrão: limit=100, offset=0
+
+5. FILTROS DE DATA:
+   - Formato ISO 8601: 2025-01-11T10:30:00.000Z
+   - Query params: ?from=2025-01-01&to=2025-01-31
+
+6. VALIDAÇÃO:
+   - Todos os DTOs são validados
+   - Erros retornam 400 com mensagem descritiva
+
+7. SOFT DELETE:
+   - Alguns recursos usam soft delete (marcam como deletado)
+   - Outros fazem hard delete (removem do banco)
+
+================================================================================
+                              FIM DO DOCUMENTO
+================================================================================

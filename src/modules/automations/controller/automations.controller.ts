@@ -37,9 +37,42 @@ export class AutomationsController {
   constructor(private readonly automationsService: AutomationsService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Create a new automation' })
-  @ApiResponse({ status: 201, description: 'Automation created successfully' })
-  @ApiResponse({ status: 400, description: 'Bad request - Invalid data' })
+  @ApiOperation({ 
+    summary: 'Create a new automation',
+    description: 'Cria uma nova automação com gatilhos e ações configuráveis'
+  })
+  @ApiResponse({ 
+    status: 201, 
+    description: 'Automation created successfully',
+    schema: {
+      example: {
+        id: 'uuid-automation-1',
+        name: 'Desligar luzes à noite',
+        description: 'Desliga todas as luzes às 22h',
+        triggerType: 'SCHEDULE',
+        triggerValue: '0 22 * * *',
+        action: {
+          type: 'device_control',
+          deviceIds: ['uuid-device-1', 'uuid-device-2'],
+          command: 'OFF'
+        },
+        enabled: true,
+        creatorId: 'uuid-user-123',
+        createdAt: '2025-01-11T10:00:00.000Z'
+      }
+    }
+  })
+  @ApiResponse({ 
+    status: 400, 
+    description: 'Bad request - Invalid data',
+    schema: {
+      example: {
+        statusCode: 400,
+        message: ['triggerType must be a valid enum value'],
+        error: 'Bad Request'
+      }
+    }
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async create(@Body() createAutomationDto: CreateAutomationDto) {
     return this.automationsService.create(createAutomationDto);
@@ -54,8 +87,28 @@ export class AutomationsController {
   }
 
   @Get('stats')
-  @ApiOperation({ summary: 'Get automation statistics' })
-  @ApiResponse({ status: 200, description: 'Automation statistics' })
+  @ApiOperation({ 
+    summary: 'Get automation statistics',
+    description: 'Retorna estatísticas agregadas sobre todas as automações do sistema'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Automation statistics',
+    schema: {
+      example: {
+        total: 50,
+        enabled: 40,
+        disabled: 10,
+        byTriggerType: {
+          SCHEDULE: 30,
+          CONDITION: 15,
+          MANUAL: 5
+        },
+        executionsToday: 120,
+        successRate: 95.5
+      }
+    }
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async getStats() {
     return this.automationsService.getAutomationStats();
@@ -89,11 +142,48 @@ export class AutomationsController {
   }
 
   @Get(':id/history')
-  @ApiOperation({ summary: 'Get automation execution history' })
+  @ApiOperation({ 
+    summary: 'Get automation execution history',
+    description: 'Retorna histórico de execuções da automação com status de sucesso/erro'
+  })
   @ApiParam({ name: 'id', description: 'Automation ID', type: String })
   @ApiQuery({ name: 'limit', required: false, description: 'Maximum number of history entries', type: Number })
-  @ApiResponse({ status: 200, description: 'Automation execution history' })
-  @ApiResponse({ status: 404, description: 'Automation not found' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Automation execution history',
+    schema: {
+      example: [
+        {
+          id: 'uuid-history-1',
+          automationId: 'uuid-automation-1',
+          executedAt: '2025-01-11T22:00:00.000Z',
+          success: true,
+          result: {
+            devicesAffected: 5,
+            message: 'Luzes desligadas com sucesso'
+          }
+        },
+        {
+          id: 'uuid-history-2',
+          automationId: 'uuid-automation-1',
+          executedAt: '2025-01-10T22:00:00.000Z',
+          success: false,
+          error: 'MQTT connection failed'
+        }
+      ]
+    }
+  })
+  @ApiResponse({ 
+    status: 404, 
+    description: 'Automation not found',
+    schema: {
+      example: {
+        statusCode: 404,
+        message: 'Automation not found',
+        error: 'Not Found'
+      }
+    }
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async getHistory(
     @Param('id', ParseUUIDPipe) id: string,
@@ -131,11 +221,46 @@ export class AutomationsController {
 
   @Post(':id/execute')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Manually execute automation' })
+  @ApiOperation({ 
+    summary: 'Manually execute automation',
+    description: 'Executa manualmente uma automação, mesmo que não seja seu horário/condição'
+  })
   @ApiParam({ name: 'id', description: 'Automation ID', type: String })
-  @ApiResponse({ status: 200, description: 'Automation executed successfully' })
-  @ApiResponse({ status: 404, description: 'Automation not found' })
-  @ApiResponse({ status: 400, description: 'Automation is disabled' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Automation executed successfully',
+    schema: {
+      example: {
+        message: 'Automation executed successfully',
+        result: {
+          devicesAffected: 5,
+          timestamp: '2025-01-11T11:30:00.000Z'
+        }
+      }
+    }
+  })
+  @ApiResponse({ 
+    status: 404, 
+    description: 'Automation not found',
+    schema: {
+      example: {
+        statusCode: 404,
+        message: 'Automation not found',
+        error: 'Not Found'
+      }
+    }
+  })
+  @ApiResponse({ 
+    status: 400, 
+    description: 'Automation is disabled',
+    schema: {
+      example: {
+        statusCode: 400,
+        message: 'Cannot execute disabled automation',
+        error: 'Bad Request'
+      }
+    }
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async executeManually(@Param('id', ParseUUIDPipe) id: string) {
     await this.automationsService.executeManually(id);
