@@ -29,8 +29,6 @@ Sistema de Gerenciamento Inteligente para Universidades - API REST e WebSocket
 - [Testes](#-testes)
 - [Deploy](#-deploy)
 - [Troubleshooting](#-troubleshooting)
-- [Contribuindo](#-contribuindo)
-- [Licença](#-licença)
 
 ---
 
@@ -847,28 +845,11 @@ lsof -ti:3000 | xargs kill -9
 
 ---
 
-## 🤝 Contribuindo
-
-1. Fork o projeto
-2. Crie uma branch (`git checkout -b feature/AmazingFeature`)
-3. Commit suas mudanças (`git commit -m 'Add some AmazingFeature'`)
-4. Push para a branch (`git push origin feature/AmazingFeature`)
-5. Abra um Pull Request
+**⭐ Se este projeto foi útil, dê uma estrela!**
 
 ---
 
-## 📄 Licença
+<div align="center">
+[⬆ Voltar ao topo](#autouni-frontend)
 
-Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
-
----
-
-## 📞 Suporte
-
-- **Documentação**: [docs/](./docs/)
-- **Issues**: [GitHub Issues](https://github.com/seu-usuario/autouni/issues)
-- **Email**: suporte@autouni.edu.br
-
----
-
-**Desenvolvido com ❤️ usando NestJS**
+</div>
