@@ -16,7 +16,7 @@ COPY . .
 # Gera o client do Prisma (precisa do node_modules)
 RUN DATABASE_URL=${DATABASE_URL} npx prisma generate
 
-# Build da aplicação Nest (assume que existe script "build")
+# Build da aplicação Nest
 RUN npm run build && npm prune --production
 
 # --- production stage ---

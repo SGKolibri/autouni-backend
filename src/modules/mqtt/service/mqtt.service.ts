@@ -16,8 +16,13 @@ export class MqttService implements OnModuleInit, OnModuleDestroy, IMqttService 
   ) {}
 
   onModuleInit() {
-    // Só conecta se MQTT_URL estiver configurado
-    if (process.env.MQTT_URL) {
+    // Só conecta se MQTT_URL estiver configurado e não vazio
+    const mqttUrl = process.env.MQTT_URL?.trim();
+    
+    this.logger.log(`MQTT_URL value: "${mqttUrl || '(not set)'}"`);
+    
+    if (mqttUrl && mqttUrl.length > 0) {
+      this.logger.log('MQTT is enabled. Attempting to connect...');
       this.connect();
     } else {
       this.logger.warn('MQTT_URL not configured. MQTT features disabled.');
@@ -29,8 +34,8 @@ export class MqttService implements OnModuleInit, OnModuleDestroy, IMqttService 
   }
 
   private connect() {
-    const url = process.env.MQTT_URL;
-    if (!url) {
+    const url = process.env.MQTT_URL?.trim();
+    if (!url || url.length === 0) {
       this.logger.warn('MQTT URL not configured. Skipping connection.');
       return;
     }
