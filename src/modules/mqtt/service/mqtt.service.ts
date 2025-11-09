@@ -16,7 +16,12 @@ export class MqttService implements OnModuleInit, OnModuleDestroy, IMqttService 
   ) {}
 
   onModuleInit() {
-    this.connect();
+    // Só conecta se MQTT_URL estiver configurado
+    if (process.env.MQTT_URL) {
+      this.connect();
+    } else {
+      this.logger.warn('MQTT_URL not configured. MQTT features disabled.');
+    }
   }
 
   onModuleDestroy() {
@@ -24,9 +29,16 @@ export class MqttService implements OnModuleInit, OnModuleDestroy, IMqttService 
   }
 
   private connect() {
-    const url = process.env.MQTT_URL ?? 'mqtt://localhost:1883';
+    const url = process.env.MQTT_URL;
+    if (!url) {
+      this.logger.warn('MQTT URL not configured. Skipping connection.');
+      return;
+    }
+
     const username = process.env.MQTT_USERNAME;
     const password = process.env.MQTT_PASSWORD;
+
+    this.logger.log(`Connecting to MQTT broker at ${url}...`);
 
     this.client = connect(url, {
       username,
@@ -182,6 +194,11 @@ export class MqttService implements OnModuleInit, OnModuleDestroy, IMqttService 
 
   // Public API methods
   publish(topic: string, payload: any, options?: { qos?: 0 | 1 | 2; retain?: boolean }): void {
+    if (!this.client) {
+      this.logger.warn('Cannot publish: MQTT client not initialized');
+      return;
+    }
+    
     if (!this.connected) {
       this.logger.warn('Cannot publish: MQTT client not connected');
       return;
@@ -199,6 +216,11 @@ export class MqttService implements OnModuleInit, OnModuleDestroy, IMqttService 
   }
 
   subscribe(topic: string | string[], qos: 0 | 1 | 2 = 0): void {
+    if (!this.client) {
+      this.logger.warn('Cannot subscribe: MQTT client not initialized');
+      return;
+    }
+    
     if (!this.connected) {
       this.logger.warn('Cannot subscribe: MQTT client not connected');
       return;
@@ -214,6 +236,11 @@ export class MqttService implements OnModuleInit, OnModuleDestroy, IMqttService 
   }
 
   unsubscribe(topic: string | string[]): void {
+    if (!this.client) {
+      this.logger.warn('Cannot unsubscribe: MQTT client not initialized');
+      return;
+    }
+    
     if (!this.connected) {
       this.logger.warn('Cannot unsubscribe: MQTT client not connected');
       return;
