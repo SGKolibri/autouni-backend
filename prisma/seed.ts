@@ -97,8 +97,6 @@ async function seedUsers() {
         cpf: undefined,
       });
     }
-    console.log(`Root user already exists: ${rootEmail}`);
-    return;
   }
 
   for (const userData of users) {
