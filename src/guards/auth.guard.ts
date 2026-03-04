@@ -15,7 +15,7 @@ interface JwtPayload {
 }
 
 interface AuthenticatedRequest extends Request {
-  user?: string;
+  user?: JwtPayload;
 }
 
 @Injectable()
@@ -34,7 +34,7 @@ export class AuthGuard implements CanActivate {
       const payload = await this.jwtService.verifyAsync<JwtPayload>(token, {
         secret: process.env.JWT_SECRET,
       });
-      request.user = payload.sub;
+      request.user = payload;
     } catch {
       throw new UnauthorizedException('Invalid token');
     }
