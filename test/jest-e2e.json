@@ -1,9 +1,30 @@
 {
   "moduleFileExtensions": ["js", "json", "ts"],
-  "rootDir": ".",
+  "rootDir": "..",
   "testEnvironment": "node",
-  "testRegex": ".e2e-spec.ts$",
+  "testRegex": "test/.*\\.e2e-spec\\.ts$",
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "moduleNameMapper": {
+    "^src/(.*)$": "<rootDir>/src/$1",
+    "^prisma/(.*)$": "<rootDir>/prisma/$1"
+  },
+  "collectCoverageFrom": [
+    "src/modules/auth/**/*.ts",
+    "src/modules/user/**/*.ts",
+    "src/guards/auth.guard.ts",
+    "src/utils/password.util.ts",
+    "!src/**/interfaces/**",
+    "!src/**/*.module.ts"
+  ],
+  "coverageDirectory": "coverage-e2e",
+  "coverageThreshold": {
+    "global": {
+      "branches": 85,
+      "functions": 90,
+      "lines": 90,
+      "statements": 90
+    }
   }
 }
