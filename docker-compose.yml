@@ -1,4 +1,24 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: autoUniPostgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: autounidockeradmin
+      POSTGRES_DB: autounidb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d autounidb"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - autouni-network
+
   mqtt:
     image: eclipse-mosquitto:latest
     container_name: autoUniMqtt
@@ -20,15 +40,18 @@ services:
     container_name: autoUniApi
     restart: unless-stopped
     depends_on:
+      postgres:
+        condition: service_healthy
       mqtt:
         condition: service_started
     environment:
       NODE_ENV: ${NODE_ENV:-development}
-      # Para desenvolvimento, use o banco local ou remoto conforme .env
-      DATABASE_URL: ${DATABASE_URL}
+      # Em Docker Compose, use o hostname interno do serviço de banco
+      DATABASE_URL: postgresql://postgres:autounidockeradmin@postgres:5432/autounidb?schema=public
       # MQTT dentro do container usa o hostname do serviço (mqtt)
       MQTT_URL: ${MQTT_URL:-mqtt://mqtt:1883}
-      PORT: ${PORT:-3000}
+      # Porta interna fixa da API no container
+      PORT: 3000
       JWT_SECRET: ${JWT_SECRET}
       ROOT_EMAIL: ${ROOT_EMAIL}
       ROOT_PASSWORD: ${ROOT_PASSWORD}
@@ -38,11 +61,13 @@ services:
       SMTP_PASS: ${SMTP_PASS}
       SMTP_FROM: ${SMTP_FROM}
     ports:
+      # Porta externa vem do .env (ex.: 10000), mapeada para 3000 interno
       - "${PORT:-3000}:3000"
     networks:
       - autouni-network
 
 volumes:
+  postgres-data:
   mqtt-data:
   mqtt-logs:
 
