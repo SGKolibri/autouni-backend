@@ -2,8 +2,8 @@
 
 **Projeto:** AutoUni - Sistema de Gerenciamento Inteligente para Universidades (Backend)  
 **Início:** Novembro 2024  
-**Status Atual:** Fase 3 - Integração e Features Avançadas (85% completo)  
-**Última Atualização:** Dezembro 2025
+**Status Atual:** Fase 4 - Testes e Qualidade (0% completo)  
+**Última Atualização:** Abril 2026
 
 ---
 
@@ -12,11 +12,11 @@
 ```
 Fase 1: ████████████████████ 100% [CONCLUÍDA]
 Fase 2: ████████████████████ 100% [CONCLUÍDA]
-Fase 3: █████████████████░░░  85% [EM ANDAMENTO]
+Fase 3: ████████████████████ 100% [CONCLUÍDA]
 Fase 4: ░░░░░░░░░░░░░░░░░░░░   0% [PLANEJADA]
 Fase 5: ░░░░░░░░░░░░░░░░░░░░   0% [PLANEJADA]
 
-Progresso Geral: ████████████████░░░░ 77%
+Progresso Geral: ████████████████████ 60% (3/5 fases concluídas)
 ```
 
 ---
@@ -128,9 +128,9 @@ Progresso Geral: ████████████████░░░░ 77
 
 ---
 
-### Fase 3: Integração e Features Avançadas (85% Em Andamento)
+### Fase 3: Integração e Features Avançadas (100% Concluída)
 
-**Período:** Abril - Dezembro 2025  
+**Período:** Abril 2025 - Abril 2026  
 **Objetivo:** MQTT, WebSocket, automações, relatórios e documentação
 
 #### 3.1 MQTT Integration [CONCLUÍDA] (100%)
@@ -199,11 +199,12 @@ Progresso Geral: ████████████████░░░░ 77
 - [x] Filtros customizados (JSON)
 - [x] Status tracking (PENDING, PROCESSING, COMPLETED, FAILED)
 - [x] File URL após conclusão
-- [ ] Geração assíncrona com workers (PENDENTE)
-- [ ] Templates PDF customizados (PENDENTE)
-- [ ] Envio por email (PENDENTE)
+- [x] Geração assíncrona com EventEmitter2 (sem overhead de Redis/Bull)
+- [x] Templates PDF com pdfkit (layout landscape, tabelas, cabeçalho)
+- [x] Envio por email com nodemailer (SMTP Gmail configurado)
+- [x] Endpoint GET /reports/:id/download para streaming do arquivo
 
-#### 3.6 Documentação da API [EM ANDAMENTO] (90%)
+#### 3.6 Documentação da API [CONCLUÍDA] (100%)
 - [x] Swagger/OpenAPI setup (@nestjs/swagger)
 - [x] DTOs documentados
 - [x] Endpoints documentados
@@ -212,13 +213,12 @@ Progresso Geral: ████████████████░░░░ 77
 - [x] API_ROUTES_RESPONSES.txt completo
 - [x] Swagger decorators aprimorados (Auth, User, Devices, Energy, Automations)
 - [x] Swagger decorators aprimorados (Buildings, Notifications)
-- [ ] Swagger decorators completos para Floors (PENDENTE)
-- [ ] Swagger decorators completos para Rooms (PENDENTE)
-- [ ] Swagger decorators completos para Reports (PENDENTE)
-- [ ] Exemplos de response em todos os endpoints (PENDENTE)
-- [ ] Storybook para componentes (OPCIONAL)
+- [x] Swagger decorators completos para Floors (com schema examples)
+- [x] Swagger decorators completos para Rooms (com schema examples)
+- [x] Swagger decorators completos para Reports (com schema examples + download)
+- [x] Exemplos de response em todos os endpoints
 
-#### 3.7 Validação e Segurança [EM ANDAMENTO] (80%)
+#### 3.7 Validação e Segurança [CONCLUÍDA] (100%)
 - [x] class-validator em todos os DTOs
 - [x] class-transformer para serialização
 - [x] ValidationPipe global
@@ -226,16 +226,15 @@ Progresso Geral: ████████████████░░░░ 77
 - [x] Email format validation
 - [x] UUID validation
 - [x] Enum validation
-- [x] CORS configuration
-- [x] Helmet para headers seguros (PENDENTE)
-- [ ] Rate limiting (PENDENTE)
-- [ ] SQL injection prevention (Prisma nativo)
-- [ ] XSS protection (PENDENTE)
-- [ ] CSRF tokens (PENDENTE)
+- [x] CORS configuration (origins explícitas via env ALLOWED_ORIGINS)
+- [x] Helmet para headers seguros (X-XSS-Protection, CSP, HSTS, etc.)
+- [x] Rate limiting com @nestjs/throttler (60 req/min global, 10 req/min em auth)
+- [x] SQL injection prevention (Prisma nativo — queries parametrizadas)
+- [x] XSS protection (Helmet headers + ValidationPipe whitelist)
+- [x] CSRF: não necessário (API stateless JWT — browsers não enviam Authorization header automaticamente)
+- [x] ScheduleModule.forRoot() corrigido no AppModule (bug: automações @Interval não disparavam)
 
-**Entregas:** Sistema completo com MQTT, WebSocket, automações, relatórios e documentação Swagger
-
-**Status Atual:** **NESTA FASE** - Finalizando documentação Swagger e segurança
+**Entregas:** Sistema completo com MQTT, WebSocket, automações, relatórios com geração real de arquivos, documentação Swagger 100% e segurança com Helmet + rate limiting
 
 ---
 
@@ -412,8 +411,9 @@ Progresso Geral: ████████████████░░░░ 77
 - [OK] WebSocket real-time: 100%
 - [OK] Automações: 100%
 - [OK] Notificações: 100%
-- [ANDAMENTO] Relatórios: 90% (falta geração assíncrona)
-- [ANDAMENTO] Swagger docs: 90% (falta alguns módulos)
+- [OK] Relatórios: 100% (geração assíncrona, PDF/CSV/XLSX, email, download)
+- [OK] Swagger docs: 100% (todos os módulos com schema examples)
+- [OK] Segurança: 100% (Helmet, rate limiting, CORS explícito)
 - [PLANEJADA] Testes: 0%
 - [PLANEJADA] Deploy produção: 0%
 
@@ -492,10 +492,19 @@ Progresso Geral: ████████████████░░░░ 77
 
 ## Notas de Versão
 
-### v0.8.5 (Atual - Dezembro 2025)
+### v0.9.0 (Atual - Abril 2026) — Fase 3 Concluída
+- [OK] Geração assíncrona de relatórios (EventEmitter2 + pdfkit + xlsx + nodemailer)
+- [OK] Endpoint GET /reports/:id/download (streaming de arquivo)
+- [OK] Email de notificação ao completar relatório (SMTP Gmail)
+- [OK] Helmet.js para headers seguros
+- [OK] Rate limiting com @nestjs/throttler (global 60 req/min, auth 10 req/min)
+- [OK] CORS explícito com ALLOWED_ORIGINS
+- [OK] ScheduleModule.forRoot() registrado (bug fix: automações @Interval não disparavam)
+- [OK] Swagger 100% completo (Floors, Rooms, Reports com schema examples)
+
+### v0.8.5 (Dezembro 2025)
 - [OK] MQTT opcional para deploy sem broker
 - [OK] Documentação Swagger aprimorada (Auth, User, Devices, Energy, Automations, Buildings, Notifications)
-- [ANDAMENTO] Swagger completo para todos os módulos
 - [OK] API_ROUTES_RESPONSES.txt completo (914 linhas)
 
 ### v0.8.0 (Novembro 2025)
@@ -542,7 +551,7 @@ Progresso Geral: ████████████████░░░░ 77
 
 ## Compatibilidade com Frontend
 
-O backend está **85% pronto** e **totalmente compatível** com o frontend atual (v0.7.0).
+O backend está **100% pronto nas Fases 1-3** e **totalmente compatível** com o frontend atual (v0.7.0).
 
 ### Endpoints Disponíveis para Frontend
 - ✅ Autenticação (login, logout, refresh, me)
@@ -561,7 +570,7 @@ O backend está **85% pronto** e **totalmente compatível** com o frontend atual
 |------|---------|----------|--------|
 | Fundação | ✅ 100% | ✅ 100% | Alinhado |
 | Features Core | ✅ 100% | ✅ 100% | Alinhado |
-| Integração | 🔄 85% | 🔄 70% | Alinhado |
+| Integração | ✅ 100% | 🔄 70% | Backend à frente |
 | Testes | ⏳ 0% | ⏳ 0% | Alinhado |
 | Deploy | ⏳ 0% | ⏳ 0% | Alinhado |
 

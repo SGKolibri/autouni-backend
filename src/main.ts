@@ -2,12 +2,21 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import helmet from 'helmet';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Enable CORS
-  app.enableCors();
+  app.use(helmet());
+
+  // JWT-based REST API — CSRF is not needed (no cookie/session auth).
+  // XSS protection is provided by helmet headers + ValidationPipe whitelist.
+  app.enableCors({
+    origin: process.env.ALLOWED_ORIGINS?.split(',') ?? '*',
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+  });
 
   // Global validation pipe
   app.useGlobalPipes(

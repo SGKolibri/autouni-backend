@@ -1,7 +1,27 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { Automation, AutomationHistory } from '@prisma/client';
-const cronParser = require('cron-parser');
+const cronParserModule: any = require('cron-parser');
+
+function parseCronExpression(expr: string, options?: any) {
+  if (cronParserModule && typeof cronParserModule.parseExpression === 'function') {
+    return cronParserModule.parseExpression(expr, options);
+  }
+  if (cronParserModule && typeof cronParserModule.parse === 'function') {
+    return cronParserModule.parse(expr, options);
+  }
+  if (cronParserModule && cronParserModule.CronExpressionParser && typeof cronParserModule.CronExpressionParser.parse === 'function') {
+    return cronParserModule.CronExpressionParser.parse(expr, options);
+  }
+  if (cronParserModule && cronParserModule.default && typeof cronParserModule.default.parse === 'function') {
+    return cronParserModule.default.parse(expr, options);
+  }
+  if (typeof cronParserModule === 'function' && typeof (cronParserModule as any).parse === 'function') {
+    return (cronParserModule as any).parse(expr, options);
+  }
+
+  throw new Error('cron-parser parse function not found');
+}
 import { AutomationsRepository } from '../repository/automations.repository';
 import { MqttService } from '../../mqtt/service/mqtt.service';
 import {
@@ -136,7 +156,7 @@ export class AutomationsService {
 
   private validateCronExpression(cronExpression: string): void {
     try {
-      cronParser.parseExpression(cronExpression);
+      parseCronExpression(cronExpression);
     } catch (err) {
       throw new BadRequestException(`Invalid cron expression: ${err.message}`);
     }
@@ -144,7 +164,7 @@ export class AutomationsService {
 
   private shouldRunAutomation(cronExpression: string, lastRunAt: Date | null, now: Date): boolean {
     try {
-      const interval = cronParser.parseExpression(cronExpression, {
+      const interval = parseCronExpression(cronExpression, {
         currentDate: lastRunAt || new Date(now.getTime() - 60000), // Start from lastRun or 1 minute ago
       });
 
