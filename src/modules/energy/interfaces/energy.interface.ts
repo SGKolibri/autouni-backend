@@ -14,6 +14,37 @@ export interface EnergyQueryParams {
   limit?: number;
 }
 
+export interface EnergyHistoryBucket {
+  bucket: Date;
+  totalKwh: number;
+  count: number;
+}
+
+export interface EnergyComparisonItem {
+  id: string;
+  name: string;
+  totalKwh: number;
+  count: number;
+  avgWh?: number;
+}
+
+export interface EnergyConsumptionSnapshot {
+  totalKwh: number;
+  count: number;
+  avgWh?: number;
+  maxWh?: number;
+  minWh?: number;
+  totalDevices: number;
+  activeDevices: number;
+  todayEnergyKwh: number;
+  dailyConsumptionKwh: number;
+  totalEnergy: number;
+  energyPeriod: 'today';
+}
+
+export type ComparisonLevel = 'general' | 'building' | 'floor' | 'room';
+export type ScopeLevel = 'general' | 'building' | 'floor' | 'room' | 'device';
+
 export interface IEnergyRepository {
   createReading(data: {
     deviceId: string;
@@ -51,6 +82,25 @@ export interface IEnergyRepository {
     buildingId: string,
     params?: EnergyQueryParams,
   ): Promise<EnergyAggregation>;
-  
+
+  findDevicesForConsumption(): Promise<Array<{ status?: string | null; metadata?: unknown }>>;
+
+  aggregateGlobal(params?: EnergyQueryParams): Promise<EnergyAggregation>;
+
+  getDeviceIdsForScope(level: Exclude<ScopeLevel, 'general'>, id: string): Promise<string[]>;
+
+  getHistoryBuckets(
+    from: Date,
+    to: Date,
+    bucketSize: 'hour' | 'day',
+    deviceIds?: string[],
+  ): Promise<EnergyHistoryBucket[]>;
+
+  getComparisonStats(
+    level: ComparisonLevel,
+    params: EnergyQueryParams,
+    id?: string,
+  ): Promise<EnergyComparisonItem[]>;
+
   deleteOldReadings(beforeDate: Date): Promise<number>;
 }

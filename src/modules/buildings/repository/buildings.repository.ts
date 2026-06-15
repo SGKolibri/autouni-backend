@@ -7,6 +7,11 @@ import {
   UpdateBuildingData,
   BuildingStats,
 } from '../interfaces/buildings.interface';
+import {
+  countBuildingActiveDevices,
+  countBuildingDevices,
+  BuildingLike,
+} from '../utils/building-energy.utils';
 
 @Injectable()
 export class BuildingsRepository implements IBuildingsRepository {
@@ -99,8 +104,13 @@ export class BuildingsRepository implements IBuildingsRepository {
         totalFloors: 0,
         totalRooms: 0,
         totalDevices: 0,
-        totalEnergy: 0,
         activeDevices: 0,
+        totalKwh: 0,
+        count: 0,
+        todayEnergyKwh: 0,
+        dailyConsumptionKwh: 0,
+        totalEnergy: 0,
+        energyPeriod: 'today',
       };
     }
 
@@ -109,30 +119,46 @@ export class BuildingsRepository implements IBuildingsRepository {
       (sum, floor) => sum + floor.rooms.length,
       0,
     );
-    const totalDevices = building.floors.reduce(
-      (sum, floor) =>
-        sum +
-        floor.rooms.reduce((roomSum, room) => roomSum + room.devices.length, 0),
-      0,
-    );
-    const activeDevices = building.floors.reduce(
-      (sum, floor) =>
-        sum +
-        floor.rooms.reduce(
-          (roomSum, room) =>
-            roomSum +
-            room.devices.filter((d) => d.status === 'ON').length,
-          0,
-        ),
-      0,
-    );
+    const totalDevices = countBuildingDevices(building as BuildingLike);
+    const activeDevices = countBuildingActiveDevices(building as BuildingLike);
 
     return {
       totalFloors,
       totalRooms,
       totalDevices,
-      totalEnergy: building.totalEnergy || 0,
       activeDevices,
+      totalKwh: building.totalEnergy || 0,
+      count: activeDevices,
+      todayEnergyKwh: building.totalEnergy || 0,
+      dailyConsumptionKwh: building.totalEnergy || 0,
+      totalEnergy: building.totalEnergy || 0,
+      energyPeriod: 'today',
     };
+  }
+
+  async findDevicesByBuildingId(buildingId: string) {
+    const building = await this.prisma.building.findUnique({
+      where: { id: buildingId },
+      include: {
+        floors: {
+          include: {
+            rooms: {
+              include: {
+                devices: {
+                  select: {
+                    status: true,
+                    metadata: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return building?.floors.flatMap((floor) =>
+      floor.rooms.flatMap((room) => room.devices),
+    ) ?? [];
   }
 }

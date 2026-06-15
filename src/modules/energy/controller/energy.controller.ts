@@ -24,6 +24,9 @@ import {
   EnergyQueryDto,
   EnergyStatsDto,
   CleanupReadingsDto,
+  GlobalStatsQueryDto,
+  EnergyHistoryQueryDto,
+  EnergyComparisonQueryDto,
 } from '../dto/energy.dto';
 import { AuthGuard } from '../../../guards/auth.guard';
 
@@ -33,6 +36,96 @@ import { AuthGuard } from '../../../guards/auth.guard';
 @Controller('energy')
 export class EnergyController {
   constructor(private readonly energyService: EnergyService) {}
+
+  @Get('history')
+  @ApiOperation({
+    summary: 'Get energy consumption history',
+    description: 'Retorna histórico de consumo em buckets de tempo (horário para today, diário para week/month). Use level+id para escopar por building/floor/room/device.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Energy history buckets',
+    schema: {
+      example: {
+        history: [
+          { bucket: '2026-05-13T00:00:00.000Z', totalKwh: 1.25, count: 5 },
+          { bucket: '2026-05-13T01:00:00.000Z', totalKwh: 0.87, count: 3 },
+        ],
+        period: { label: 'today', from: '2026-05-13T00:00:00.000Z', to: '2026-05-13T14:30:00.000Z' },
+        level: 'general',
+      },
+    },
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async getEnergyHistory(@Query() query: EnergyHistoryQueryDto) {
+    return this.energyService.getEnergyHistory(
+      query.period ?? 'today',
+      query.level ?? 'general',
+      query.id,
+    );
+  }
+
+  @Get('comparison')
+  @ApiOperation({
+    summary: 'Compare energy consumption across entities',
+    description: 'Compara consumo entre entidades no nível solicitado: general→buildings, building→floors, floor→rooms, room→devices.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Energy comparison across entities',
+    schema: {
+      example: {
+        comparison: [
+          { id: 'uuid-1', name: 'Building A', totalKwh: 1250.5, count: 5000, avgWh: 250.1 },
+          { id: 'uuid-2', name: 'Building B', totalKwh: 980.3, count: 3920, avgWh: 250.1 },
+        ],
+        level: 'general',
+        period: { label: 'today', from: '2026-05-13T00:00:00.000Z', to: '2026-05-13T14:30:00.000Z' },
+      },
+    },
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async getEnergyComparison(@Query() query: EnergyComparisonQueryDto) {
+    return this.energyService.getEnergyComparison(
+      query.level ?? 'general',
+      query.id,
+      query.period,
+    );
+  }
+
+  @Get('stats')
+  @ApiOperation({
+    summary: 'Get global energy statistics',
+    description: 'Retorna estatísticas agregadas de consumo energético de todos os dispositivos. Use ?period=today|week|month para filtrar por período.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Global energy statistics',
+    schema: {
+      example: {
+        totalKwh: 4820.5,
+        count: 19280,
+        avgWh: 250.0,
+        maxWh: 1500.0,
+        minWh: 1.0,
+        totalDevices: 250,
+        activeDevices: 180,
+        todayEnergyKwh: 4820.5,
+        dailyConsumptionKwh: 4820.5,
+        totalEnergy: 4820.5,
+        energyPeriod: 'today',
+        period: {
+          label: 'today',
+          from: '2026-05-13T00:00:00.000Z',
+          to: '2026-05-13T14:30:00.000Z',
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async getGlobalStats(@Query() query: GlobalStatsQueryDto) {
+    return this.energyService.getGlobalStats(query.period);
+  }
 
   @Post('readings')
   @ApiOperation({ 
