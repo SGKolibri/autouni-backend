@@ -30,7 +30,10 @@ export interface EnergyComparisonItem {
 
 export interface EnergyConsumptionSnapshot {
   totalKwh: number;
+  /** Number of EnergyReading rows in the queried period. 0 means no telemetry data. */
   count: number;
+  /** Same as count — explicit alias to distinguish from activeDevices. */
+  readingCount: number;
   avgWh?: number;
   maxWh?: number;
   minWh?: number;
@@ -40,6 +43,10 @@ export interface EnergyConsumptionSnapshot {
   dailyConsumptionKwh: number;
   totalEnergy: number;
   energyPeriod: 'today';
+  /** Timestamp of the most recent EnergyReading in the database (any period). Null if table is empty. */
+  lastReadingAt: Date | null;
+  /** True when the snapshot carries non-zero energy from telemetry or estimation. */
+  hasData: boolean;
 }
 
 export type ComparisonLevel = 'general' | 'building' | 'floor' | 'room';
@@ -86,6 +93,8 @@ export interface IEnergyRepository {
   findDevicesForConsumption(): Promise<Array<{ status?: string | null; metadata?: unknown }>>;
 
   aggregateGlobal(params?: EnergyQueryParams): Promise<EnergyAggregation>;
+
+  getLastReadingTimestamp(): Promise<Date | null>;
 
   getDeviceIdsForScope(level: Exclude<ScopeLevel, 'general'>, id: string): Promise<string[]>;
 

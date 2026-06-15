@@ -26,13 +26,16 @@ export class BuildingsService {
   }
 
   async findAll(): Promise<BuildingWithEnergyToday[]> {
-    const buildings = await this.buildingsRepository.findAll();
-
     const { from: startOfToday, to: now } = resolvePeriodRange(
       'today',
       new Date(),
       getAppTimeZone(),
     );
+
+    const [buildings, lastReadingAt] = await Promise.all([
+      this.buildingsRepository.findAll(),
+      this.energyService.getLastReadingTimestamp(),
+    ]);
 
     return Promise.all(
       buildings.map(async (building) => {
@@ -48,10 +51,7 @@ export class BuildingsService {
           energyStats.count,
         );
 
-        return {
-          ...building,
-          ...consumption,
-        };
+        return { ...building, ...consumption, lastReadingAt };
       }),
     );
   }
@@ -75,10 +75,10 @@ export class BuildingsService {
       new Date(),
       getAppTimeZone(),
     );
-    const energyStats = await this.energyService.getBuildingEnergyStats(id, {
-      from: startOfToday,
-      to: now,
-    });
+    const [energyStats, lastReadingAt] = await Promise.all([
+      this.energyService.getBuildingEnergyStats(id, { from: startOfToday, to: now }),
+      this.energyService.getLastReadingTimestamp(),
+    ]);
 
     return {
       ...building,
@@ -89,6 +89,7 @@ export class BuildingsService {
         energyStats.totalKwh,
         energyStats.count,
       ),
+      lastReadingAt,
     };
   }
 
@@ -122,6 +123,8 @@ export class BuildingsService {
       dailyConsumptionKwh: building.dailyConsumptionKwh,
       totalEnergy: building.totalEnergy,
       energyPeriod: building.energyPeriod,
+      lastReadingAt: building.lastReadingAt,
+      hasData: building.totalKwh > 0,
     };
   }
 }

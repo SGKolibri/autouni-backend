@@ -458,6 +458,14 @@ export class EnergyRepository implements IEnergyRepository {
     );
   }
 
+  async getLastReadingTimestamp(): Promise<Date | null> {
+    const row = await this.prisma.energyReading.findFirst({
+      orderBy: { timestamp: 'desc' },
+      select: { timestamp: true },
+    });
+    return row?.timestamp ?? null;
+  }
+
   async deleteOldReadings(beforeDate: Date): Promise<number> {
     const result = await this.prisma.energyReading.deleteMany({
       where: {

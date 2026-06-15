@@ -1,5 +1,5 @@
 type DeviceLike = {
-  status?: string | null;
+  status?: string | boolean | null;
   powerRating?: number | string | null;
   metadata?: unknown;
 };
@@ -20,6 +20,7 @@ export type DeviceConsumptionLike = DeviceLike;
 
 export interface BuildingConsumptionSnapshot {
   totalKwh: number;
+  /** EnergyReading rows counted. 0 means no telemetry for the period. */
   count: number;
   totalDevices: number;
   activeDevices: number;
@@ -89,20 +90,51 @@ function extractMetadataPower(metadata: unknown): number | null {
     }
   }
 
+  for (const value of Object.values(metadata)) {
+    if (typeof value === 'object' && value !== null) {
+      const nested = extractMetadataPower(value);
+      if (nested !== null) {
+        return nested;
+      }
+    }
+  }
+
   return null;
 }
 
-export function isDeviceActive(device: DeviceLike): boolean {
-  const status = normalizeString(device.status ?? extractMetadataStatus(device.metadata));
-  return status === 'on';
-}
-
-function extractMetadataStatus(metadata: unknown): unknown {
+function extractMetadataActiveState(metadata: unknown): unknown {
   if (!isPlainObject(metadata)) {
     return null;
   }
 
-  return metadata.status ?? metadata.state ?? metadata.powerState ?? null;
+  const statusKeys = ['status', 'state', 'powerState'];
+  for (const key of statusKeys) {
+    const value = metadata[key];
+    if (typeof value === 'string' || typeof value === 'boolean') {
+      return value;
+    }
+  }
+
+  for (const value of Object.values(metadata)) {
+    if (typeof value === 'object' && value !== null) {
+      const nested = extractMetadataActiveState(value);
+      if (nested !== null) {
+        return nested;
+      }
+    }
+  }
+
+  return null;
+}
+
+export function isDeviceActive(device: DeviceLike): boolean {
+  const rawStatus = device.status ?? extractMetadataActiveState(device.metadata);
+  if (typeof rawStatus === 'boolean') {
+    return rawStatus;
+  }
+
+  const status = normalizeString(rawStatus);
+  return status === 'on' || status === 'true';
 }
 
 export function getDevicePowerWatts(device: DeviceLike): number {
@@ -163,12 +195,13 @@ export function summarizeDevicesConsumption(
   const totalDevices = devices.length;
   const activeDevices = devices.filter((device) => isDeviceActive(device)).length;
   const estimatedKwh = estimateDevicesDailyConsumptionKwh(devices, from, to);
-  const hasTelemetry = (telemetryCount ?? 0) > 0;
-  const dailyConsumptionKwh = hasTelemetry ? telemetryKwh ?? 0 : estimatedKwh;
+  const telemetryValue = telemetryKwh ?? 0;
+  const hasUsableTelemetry = (telemetryCount ?? 0) > 0 && telemetryValue > 0;
+  const dailyConsumptionKwh = hasUsableTelemetry ? telemetryValue : estimatedKwh;
 
   return {
     totalKwh: dailyConsumptionKwh,
-    count: hasTelemetry ? telemetryCount ?? 0 : activeDevices,
+    count: hasUsableTelemetry ? telemetryCount ?? 0 : activeDevices,
     totalDevices,
     activeDevices,
     todayEnergyKwh: dailyConsumptionKwh,

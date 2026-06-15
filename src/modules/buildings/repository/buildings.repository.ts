@@ -110,7 +110,9 @@ export class BuildingsRepository implements IBuildingsRepository {
         todayEnergyKwh: 0,
         dailyConsumptionKwh: 0,
         totalEnergy: 0,
-        energyPeriod: 'today',
+        energyPeriod: 'today' as const,
+        lastReadingAt: null,
+        hasData: false,
       };
     }
 
@@ -132,7 +134,9 @@ export class BuildingsRepository implements IBuildingsRepository {
       todayEnergyKwh: building.totalEnergy || 0,
       dailyConsumptionKwh: building.totalEnergy || 0,
       totalEnergy: building.totalEnergy || 0,
-      energyPeriod: 'today',
+      energyPeriod: 'today' as const,
+      lastReadingAt: null,
+      hasData: (building.totalEnergy || 0) > 0,
     };
   }
 

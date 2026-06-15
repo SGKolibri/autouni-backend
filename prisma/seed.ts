@@ -312,15 +312,6 @@ async function seedAutomations() {
 async function seedSampleEnergyReadings() {
   console.log('🌱 Seeding sample energy readings...');
 
-  const devices = await prisma.device.findMany({
-    where: {
-      type: {
-        in: ['LIGHT', 'AC', 'PROJECTOR'],
-      },
-    },
-    take: 50, // Aumentado de 10 para 50 dispositivos
-  });
-
   console.log('Verifying if devices already have energy readings...');
   const existingReadings = await prisma.energyReading.findFirst();
   if (existingReadings) {
@@ -330,28 +321,47 @@ async function seedSampleEnergyReadings() {
     return;
   }
 
+  const devices = await prisma.device.findMany({
+    where: {
+      type: { in: ['LIGHT', 'AC', 'PROJECTOR'] },
+      status: 'ON',
+    },
+  });
+
   if (devices.length === 0) {
-    console.warn('No devices found for energy readings');
+    console.warn('No ON devices of type LIGHT/AC/PROJECTOR found for energy readings');
     return;
   }
 
   const now = new Date();
+  // Midnight of today (local server time) — all readings will fall within today's window
+  const todayStart = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    0, 0, 0, 0,
+  );
+  const elapsedMs = now.getTime() - todayStart.getTime();
+
+  const READINGS_PER_DEVICE = 5;
   let readingCount = 0;
 
   for (const device of devices) {
-    // Criar 5 leituras para cada dispositivo (últimas 24h)
-    for (let i = 0; i < 5; i++) {
-      const timestamp = new Date(now.getTime() - i * 4 * 60 * 60 * 1000); // -4h cada
-      const baseValue =
-        device.type === 'AC' ? 800 : device.type === 'PROJECTOR' ? 200 : 40;
-      const randomVariation = Math.random() * 0.2 - 0.1; // ±10%
-      const valueWh = baseValue * (1 + randomVariation);
+    const baseWh =
+      device.type === 'AC' ? 800 : device.type === 'PROJECTOR' ? 200 : 40;
+
+    for (let i = 0; i < READINGS_PER_DEVICE; i++) {
+      // Spread evenly from midnight to now so every reading falls within today
+      const fraction = (i + 1) / (READINGS_PER_DEVICE + 1);
+      const timestamp = new Date(todayStart.getTime() + fraction * elapsedMs);
+      const jitter = 1 + (Math.random() * 0.2 - 0.1); // ±10%
+      const valueWh = parseFloat((baseWh * jitter).toFixed(2));
 
       await prisma.energyReading.create({
         data: {
           deviceId: device.id,
-          valueWh: parseFloat(valueWh.toFixed(2)),
-          voltage: 220 + Math.random() * 10 - 5,
+          valueWh,
+          voltage: parseFloat((215 + Math.random() * 10).toFixed(4)),
           current: parseFloat((valueWh / 220).toFixed(2)),
           timestamp,
         },
@@ -361,7 +371,9 @@ async function seedSampleEnergyReadings() {
     }
   }
 
-  console.log(`✅ ${readingCount} sample energy readings created`);
+  console.log(
+    `✅ ${readingCount} energy readings created (${devices.length} devices × ${READINGS_PER_DEVICE}, all within today)`,
+  );
 }
 
 // Main seed function

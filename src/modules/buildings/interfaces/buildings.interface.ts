@@ -4,7 +4,11 @@ import { BuildingConsumptionSnapshot } from '../utils/building-energy.utils';
 
 export type BuildingWithRelations = Building & BuildingLike;
 
-export type BuildingWithEnergyToday = BuildingWithRelations & BuildingConsumptionSnapshot;
+export type BuildingWithEnergyToday = BuildingWithRelations &
+  BuildingConsumptionSnapshot & {
+    /** Timestamp of the most recent EnergyReading in the DB (global). Null if no data exists. */
+    lastReadingAt: Date | null;
+  };
 
 export interface IBuildingsRepository {
   create(data: CreateBuildingData): Promise<Building>;
@@ -44,6 +48,8 @@ export interface BuildingStats {
   dailyConsumptionKwh: number;
   totalEnergy: number;
   energyPeriod: 'today';
+  lastReadingAt: Date | null;
+  hasData: boolean;
 }
 
 export type BuildingConsumption = BuildingConsumptionSnapshot;

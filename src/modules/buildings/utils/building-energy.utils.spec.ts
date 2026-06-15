@@ -70,6 +70,42 @@ describe('building-energy utils', () => {
     expect(summarizeBuildingConsumption(building, from, to, 0, 0).todayEnergyKwh).toBeGreaterThan(0);
   });
 
+  it('falls back when telemetry exists but sums to zero', () => {
+    const building = {
+      floors: [
+        {
+          rooms: [
+            {
+              devices: [{ status: 'ON', metadata: { power: '100W' } }],
+            },
+          ],
+        },
+      ],
+    };
+    const from = new Date('2026-06-14T00:00:00.000Z');
+    const to = new Date('2026-06-14T01:00:00.000Z');
+
+    expect(summarizeBuildingConsumption(building, from, to, 0, 12).todayEnergyKwh).toBeGreaterThan(0);
+  });
+
+  it('accepts boolean true as active status', () => {
+    const building = {
+      floors: [
+        {
+          rooms: [
+            {
+              devices: [{ status: true, metadata: { power: '100W' } }],
+            },
+          ],
+        },
+      ],
+    };
+    const from = new Date('2026-06-14T00:00:00.000Z');
+    const to = new Date('2026-06-14T01:00:00.000Z');
+
+    expect(summarizeBuildingConsumption(building, from, to, 0, 0).activeDevices).toBe(1);
+  });
+
   it('uses telemetry when available across multiple floors, rooms and devices', () => {
     const building = {
       floors: [

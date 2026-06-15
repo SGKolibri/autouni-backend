@@ -72,6 +72,10 @@ export class EnergyService {
     return this.energyRepository.aggregateByBuilding(buildingId, params);
   }
 
+  async getLastReadingTimestamp(): Promise<Date | null> {
+    return this.energyRepository.getLastReadingTimestamp();
+  }
+
   async getGlobalStats(
     period?: 'today' | 'week' | 'month',
   ): Promise<EnergyConsumptionSnapshot & {
@@ -81,8 +85,11 @@ export class EnergyService {
     minWh?: number;
   }> {
     const { from, to } = resolvePeriodRange(period, new Date(), getAppTimeZone());
-    const telemetry = await this.energyRepository.aggregateGlobal({ from, to });
-    const devices = await this.energyRepository.findDevicesForConsumption();
+    const [telemetry, devices, lastReadingAt] = await Promise.all([
+      this.energyRepository.aggregateGlobal({ from, to }),
+      this.energyRepository.findDevicesForConsumption(),
+      this.energyRepository.getLastReadingTimestamp(),
+    ]);
     const snapshot = summarizeDevicesConsumption(
       devices as DeviceConsumptionLike[],
       from,
@@ -94,7 +101,11 @@ export class EnergyService {
     return {
       ...snapshot,
       totalKwh: snapshot.totalEnergy,
-      count: telemetry.count > 0 ? telemetry.count : snapshot.activeDevices,
+      // count and readingCount always reflect EnergyReading rows in the period — never activeDevices
+      count: telemetry.count,
+      readingCount: telemetry.count,
+      lastReadingAt,
+      hasData: telemetry.count > 0 || snapshot.totalEnergy > 0,
       avgWh: telemetry.count > 0 ? telemetry.avgWh : undefined,
       maxWh: telemetry.count > 0 ? telemetry.maxWh : undefined,
       minWh: telemetry.count > 0 ? telemetry.minWh : undefined,
