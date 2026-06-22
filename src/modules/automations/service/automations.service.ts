@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { Automation, AutomationHistory } from '@prisma/client';
-const cronParser = require('cron-parser');
+import { CronExpressionParser } from 'cron-parser';
 import { AutomationsRepository } from '../repository/automations.repository';
 import { MqttService } from '../../mqtt/service/mqtt.service';
 import {
@@ -136,7 +136,7 @@ export class AutomationsService {
 
   private validateCronExpression(cronExpression: string): void {
     try {
-      cronParser.parseExpression(cronExpression);
+      CronExpressionParser.parse(cronExpression);
     } catch (err) {
       throw new BadRequestException(`Invalid cron expression: ${err.message}`);
     }
@@ -144,8 +144,8 @@ export class AutomationsService {
 
   private shouldRunAutomation(cronExpression: string, lastRunAt: Date | null, now: Date): boolean {
     try {
-      const interval = cronParser.parseExpression(cronExpression, {
-        currentDate: lastRunAt || new Date(now.getTime() - 60000), // Start from lastRun or 1 minute ago
+      const interval = CronExpressionParser.parse(cronExpression, {
+        currentDate: lastRunAt || new Date(now.getTime() - 60000),
       });
 
       const nextRun = interval.next().toDate();
