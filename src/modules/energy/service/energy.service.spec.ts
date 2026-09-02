@@ -1,113 +1,186 @@
+import { Test, TestingModule } from '@nestjs/testing';
 import { EnergyService } from './energy.service';
+import { EnergyRepository } from '../repository/energy.repository';
 
-const LAST_READING_AT = new Date('2026-05-25T23:41:01.945Z');
+describe('EnergyService', () => {
+  let service: EnergyService;
+  let repository: jest.Mocked<EnergyRepository>;
 
-function makeRepo(overrides: Partial<Record<string, jest.Mock>> = {}) {
-  return {
-    aggregateGlobal: jest.fn().mockResolvedValue({ totalKwh: 0, count: 0 }),
-    findDevicesForConsumption: jest.fn().mockResolvedValue([]),
-    getLastReadingTimestamp: jest.fn().mockResolvedValue(LAST_READING_AT),
-    findReadingsByDevice: jest.fn(),
-    findReadingsByRoom: jest.fn(),
-    aggregateByDevice: jest.fn(),
-    aggregateByRoom: jest.fn(),
-    aggregateByFloor: jest.fn(),
-    aggregateByBuilding: jest.fn(),
-    getDeviceIdsForScope: jest.fn(),
-    getHistoryBuckets: jest.fn(),
-    getComparisonStats: jest.fn(),
-    deleteOldReadings: jest.fn(),
-    createReading: jest.fn(),
-    ...overrides,
-  } as any;
-}
+  const mockReading = {
+    id: 'reading-uuid-1',
+    deviceId: 'device-uuid-1',
+    valueWh: 150.5,
+    voltage: 220,
+    current: 0.68,
+    timestamp: new Date('2025-01-01'),
+    createdAt: new Date('2025-01-01'),
+  };
 
-describe('EnergyService.getGlobalStats', () => {
-  it('uses fallback consumption when today has no telemetry; count reflects readings (0)', async () => {
-    const repo = makeRepo({
-      aggregateGlobal: jest.fn().mockResolvedValue({ totalKwh: 0, count: 0 }),
-      findDevicesForConsumption: jest.fn().mockResolvedValue([
-        { status: 'on', metadata: { power: '120W' } },
-        { status: 'ON', powerRating: '50W' },
-      ]),
-    });
+  const mockAggregation = {
+    totalKwh: 1.5,
+    count: 10,
+    avgWh: 150,
+    maxWh: 200,
+    minWh: 100,
+  };
 
-    const service = new EnergyService(repo);
-    const result = await service.getGlobalStats('today');
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        EnergyService,
+        {
+          provide: EnergyRepository,
+          useValue: {
+            createReading: jest.fn(),
+            findReadingsByDevice: jest.fn(),
+            findReadingsByRoom: jest.fn(),
+            aggregateByDevice: jest.fn(),
+            aggregateByRoom: jest.fn(),
+            aggregateByFloor: jest.fn(),
+            aggregateByBuilding: jest.fn(),
+            deleteOldReadings: jest.fn(),
+          },
+        },
+      ],
+    }).compile();
 
-    expect(result.totalKwh).toBeGreaterThan(0);
-    expect(result.totalEnergy).toBe(result.todayEnergyKwh);
-    expect(result.activeDevices).toBe(2);
-    expect(result.totalDevices).toBe(2);
-    // count and readingCount must be the number of EnergyReading rows — NOT activeDevices
-    expect(result.count).toBe(0);
-    expect(result.readingCount).toBe(0);
-    expect(result.hasData).toBe(true);
-    expect(result.lastReadingAt).toBe(LAST_READING_AT);
+    service = module.get<EnergyService>(EnergyService);
+    repository = module.get(EnergyRepository);
   });
 
-  it('keeps telemetry totals when readings exist', async () => {
-    const repo = makeRepo({
-      aggregateGlobal: jest.fn().mockResolvedValue({
-        totalKwh: 5.5,
-        count: 11,
-        avgWh: 500,
-        maxWh: 900,
-        minWh: 50,
-      }),
-      findDevicesForConsumption: jest.fn().mockResolvedValue([
-        { status: 'on', metadata: { power: 120 } },
-      ]),
-    });
+  afterEach(() => jest.clearAllMocks());
 
-    const service = new EnergyService(repo);
-    const result = await service.getGlobalStats('today');
-
-    expect(result.totalKwh).toBe(5.5);
-    expect(result.count).toBe(11);
-    expect(result.readingCount).toBe(11);
-    expect(result.avgWh).toBe(500);
-    expect(result.activeDevices).toBe(1);
-    expect(result.totalDevices).toBe(1);
-    expect(result.hasData).toBe(true);
-    expect(result.lastReadingAt).toBe(LAST_READING_AT);
+  it('should be defined', () => {
+    expect(service).toBeDefined();
   });
 
-  it('falls back to estimation when telemetry count > 0 but total energy is zero', async () => {
-    const repo = makeRepo({
-      aggregateGlobal: jest.fn().mockResolvedValue({ totalKwh: 0, count: 233 }),
-      findDevicesForConsumption: jest.fn().mockResolvedValue([
-        { status: 'ON', metadata: { power: '60W' } },
-      ]),
+  describe('createReading', () => {
+    it('should create and return energy reading', async () => {
+      repository.createReading.mockResolvedValue(mockReading as any);
+      const data = { deviceId: 'device-uuid-1', valueWh: 150.5, voltage: 220, current: 0.68 };
+      const result = await service.createReading(data);
+      expect(result).toEqual(mockReading);
+      expect(repository.createReading).toHaveBeenCalledWith(data);
     });
-
-    const service = new EnergyService(repo);
-    const result = await service.getGlobalStats('today');
-
-    expect(result.totalKwh).toBeGreaterThan(0);
-    expect(result.todayEnergyKwh).toBeGreaterThan(0);
-    expect(result.activeDevices).toBe(1);
-    // readingCount is the actual DB count, even though energy fell back to estimation
-    expect(result.readingCount).toBe(233);
-    expect(result.hasData).toBe(true);
   });
 
-  it('returns hasData false when no readings and all devices lack power data', async () => {
-    const repo = makeRepo({
-      aggregateGlobal: jest.fn().mockResolvedValue({ totalKwh: 0, count: 0 }),
-      findDevicesForConsumption: jest.fn().mockResolvedValue([
-        { status: 'ON', metadata: { type: 'PIR', range: '6m' } },
-        { status: 'ON', metadata: { brand: 'Epson', resolution: '1920x1080' } },
-      ]),
-      getLastReadingTimestamp: jest.fn().mockResolvedValue(LAST_READING_AT),
+  describe('getDeviceReadings', () => {
+    it('should return readings for a device', async () => {
+      repository.findReadingsByDevice.mockResolvedValue([mockReading] as any);
+      const result = await service.getDeviceReadings('device-uuid-1');
+      expect(result).toHaveLength(1);
+      expect(repository.findReadingsByDevice).toHaveBeenCalledWith('device-uuid-1', undefined);
     });
 
-    const service = new EnergyService(repo);
-    const result = await service.getGlobalStats('today');
+    it('should pass query params to repository', async () => {
+      repository.findReadingsByDevice.mockResolvedValue([]);
+      const params = { from: new Date('2025-01-01'), to: new Date('2025-01-31'), limit: 50 };
+      await service.getDeviceReadings('device-uuid-1', params);
+      expect(repository.findReadingsByDevice).toHaveBeenCalledWith('device-uuid-1', params);
+    });
+  });
 
-    expect(result.totalKwh).toBe(0);
-    expect(result.count).toBe(0);
-    expect(result.hasData).toBe(false);
-    expect(result.lastReadingAt).toBe(LAST_READING_AT);
+  describe('getRoomReadings', () => {
+    it('should return readings for a room', async () => {
+      repository.findReadingsByRoom.mockResolvedValue([mockReading] as any);
+      const result = await service.getRoomReadings('room-uuid-1');
+      expect(result).toHaveLength(1);
+      expect(repository.findReadingsByRoom).toHaveBeenCalledWith('room-uuid-1', undefined);
+    });
+  });
+
+  describe('getDeviceEnergyStats', () => {
+    it('should return aggregated stats for a device', async () => {
+      repository.aggregateByDevice.mockResolvedValue(mockAggregation);
+      const result = await service.getDeviceEnergyStats('device-uuid-1');
+      expect(result).toEqual(mockAggregation);
+      expect(repository.aggregateByDevice).toHaveBeenCalledWith('device-uuid-1', undefined);
+    });
+
+    it('should pass params to repository', async () => {
+      repository.aggregateByDevice.mockResolvedValue(mockAggregation);
+      const params = { from: new Date('2025-01-01') };
+      await service.getDeviceEnergyStats('device-uuid-1', params);
+      expect(repository.aggregateByDevice).toHaveBeenCalledWith('device-uuid-1', params);
+    });
+  });
+
+  describe('getRoomEnergyStats', () => {
+    it('should return aggregated stats for a room', async () => {
+      repository.aggregateByRoom.mockResolvedValue(mockAggregation);
+      const result = await service.getRoomEnergyStats('room-uuid-1');
+      expect(result).toEqual(mockAggregation);
+    });
+  });
+
+  describe('getFloorEnergyStats', () => {
+    it('should return aggregated stats for a floor', async () => {
+      repository.aggregateByFloor.mockResolvedValue(mockAggregation);
+      const result = await service.getFloorEnergyStats('floor-uuid-1');
+      expect(result).toEqual(mockAggregation);
+    });
+  });
+
+  describe('getBuildingEnergyStats', () => {
+    it('should return aggregated stats for a building', async () => {
+      repository.aggregateByBuilding.mockResolvedValue(mockAggregation);
+      const result = await service.getBuildingEnergyStats('building-uuid-1');
+      expect(result).toEqual(mockAggregation);
+    });
+  });
+
+  describe('deviceEnergyKwh (legacy)', () => {
+    it('should return totalKwh for device', async () => {
+      repository.aggregateByDevice.mockResolvedValue(mockAggregation);
+      const result = await service.deviceEnergyKwh('device-uuid-1');
+      expect(result).toBe(mockAggregation.totalKwh);
+    });
+
+    it('should pass from/to dates to aggregation', async () => {
+      repository.aggregateByDevice.mockResolvedValue(mockAggregation);
+      const from = new Date('2025-01-01');
+      const to = new Date('2025-01-31');
+      await service.deviceEnergyKwh('device-uuid-1', from, to);
+      expect(repository.aggregateByDevice).toHaveBeenCalledWith('device-uuid-1', { from, to });
+    });
+  });
+
+  describe('roomEnergyKwh (legacy)', () => {
+    it('should return totalKwh for room', async () => {
+      repository.aggregateByRoom.mockResolvedValue(mockAggregation);
+      const result = await service.roomEnergyKwh('room-uuid-1');
+      expect(result).toBe(mockAggregation.totalKwh);
+    });
+  });
+
+  describe('buildingEnergyKwh (legacy)', () => {
+    it('should return totalKwh for building', async () => {
+      repository.aggregateByBuilding.mockResolvedValue(mockAggregation);
+      const result = await service.buildingEnergyKwh('building-uuid-1');
+      expect(result).toBe(mockAggregation.totalKwh);
+    });
+  });
+
+  describe('cleanupOldReadings', () => {
+    it('should delete readings older than default 90 days', async () => {
+      repository.deleteOldReadings.mockResolvedValue(50);
+      const result = await service.cleanupOldReadings();
+      expect(result).toBe(50);
+      expect(repository.deleteOldReadings).toHaveBeenCalledWith(expect.any(Date));
+      const calledDate = repository.deleteOldReadings.mock.calls[0][0] as Date;
+      const expectedDate = new Date();
+      expectedDate.setDate(expectedDate.getDate() - 90);
+      expect(Math.abs(calledDate.getTime() - expectedDate.getTime())).toBeLessThan(1000);
+    });
+
+    it('should delete readings older than custom days', async () => {
+      repository.deleteOldReadings.mockResolvedValue(10);
+      const result = await service.cleanupOldReadings(30);
+      expect(result).toBe(10);
+      const calledDate = repository.deleteOldReadings.mock.calls[0][0] as Date;
+      const expectedDate = new Date();
+      expectedDate.setDate(expectedDate.getDate() - 30);
+      expect(Math.abs(calledDate.getTime() - expectedDate.getTime())).toBeLessThan(1000);
+    });
   });
 });

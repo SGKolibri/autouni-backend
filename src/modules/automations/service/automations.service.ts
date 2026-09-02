@@ -1,27 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { Automation, AutomationHistory } from '@prisma/client';
-const cronParserModule: any = require('cron-parser');
-
-function parseCronExpression(expr: string, options?: any) {
-  if (cronParserModule && typeof cronParserModule.parseExpression === 'function') {
-    return cronParserModule.parseExpression(expr, options);
-  }
-  if (cronParserModule && typeof cronParserModule.parse === 'function') {
-    return cronParserModule.parse(expr, options);
-  }
-  if (cronParserModule && cronParserModule.CronExpressionParser && typeof cronParserModule.CronExpressionParser.parse === 'function') {
-    return cronParserModule.CronExpressionParser.parse(expr, options);
-  }
-  if (cronParserModule && cronParserModule.default && typeof cronParserModule.default.parse === 'function') {
-    return cronParserModule.default.parse(expr, options);
-  }
-  if (typeof cronParserModule === 'function' && typeof (cronParserModule as any).parse === 'function') {
-    return (cronParserModule as any).parse(expr, options);
-  }
-
-  throw new Error('cron-parser parse function not found');
-}
+import { CronExpressionParser } from 'cron-parser';
 import { AutomationsRepository } from '../repository/automations.repository';
 import { MqttService } from '../../mqtt/service/mqtt.service';
 import {
@@ -63,11 +43,11 @@ export class AutomationsService {
 
   async findById(id: string): Promise<Automation> {
     const automation = await this.automationsRepository.findById(id);
-    
+
     if (!automation) {
       throw new NotFoundException(`Automation with ID ${id} not found`);
     }
-    
+
     return automation;
   }
 
@@ -115,7 +95,7 @@ export class AutomationsService {
 
   async executeManually(id: string): Promise<void> {
     const automation = await this.findById(id);
-    
+
     if (!automation.enabled) {
       throw new BadRequestException('Automation is disabled');
     }
@@ -129,7 +109,7 @@ export class AutomationsService {
     try {
       const scheduleAutomations = await this.automationsRepository.findByTriggerType(TriggerType.SCHEDULE);
       const now = new Date();
-      
+
       for (const automation of scheduleAutomations) {
         try {
           if (!automation.cron) continue;
@@ -156,7 +136,7 @@ export class AutomationsService {
 
   private validateCronExpression(cronExpression: string): void {
     try {
-      parseCronExpression(cronExpression);
+      CronExpressionParser.parse(cronExpression);
     } catch (err) {
       throw new BadRequestException(`Invalid cron expression: ${err.message}`);
     }
@@ -164,12 +144,12 @@ export class AutomationsService {
 
   private shouldRunAutomation(cronExpression: string, lastRunAt: Date | null, now: Date): boolean {
     try {
-      const interval = parseCronExpression(cronExpression, {
-        currentDate: lastRunAt || new Date(now.getTime() - 60000), // Start from lastRun or 1 minute ago
+      const interval = CronExpressionParser.parse(cronExpression, {
+        currentDate: lastRunAt || new Date(now.getTime() - 60000),
       });
 
       const nextRun = interval.next().toDate();
-      
+
       // Check if the next scheduled run is in the past (meaning it should have run)
       return nextRun <= now;
     } catch (err) {
@@ -185,8 +165,8 @@ export class AutomationsService {
       // Parse action
       let action: AutomationAction;
       try {
-        action = typeof automation.action === 'string' 
-          ? JSON.parse(automation.action) 
+        action = typeof automation.action === 'string'
+          ? JSON.parse(automation.action)
           : automation.action as any;
       } catch {
         throw new Error('Invalid action format');
@@ -214,7 +194,7 @@ export class AutomationsService {
       this.logger.log(`Automation ${automation.id} executed successfully`);
     } catch (err) {
       this.logger.error(`Error executing automation ${automation.id}`, err);
-      
+
       // Create failure history entry
       await this.automationsRepository.createHistory({
         automationId: automation.id,
@@ -228,7 +208,7 @@ export class AutomationsService {
 
   async getAutomationStats() {
     const all = await this.findAll();
-    
+
     return {
       total: all.length,
       enabled: all.filter(a => a.enabled).length,
