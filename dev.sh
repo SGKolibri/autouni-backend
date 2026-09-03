@@ -36,13 +36,13 @@ function show_help() {
 
 function start_services() {
     echo -e "${GREEN}Starting all services...${NC}"
-    
+
     # Stop standalone containers if exist
     docker stop happy_tu musing_curie 2>/dev/null || true
-    
+
     # Start with docker-compose
     docker-compose up -d
-    
+
     echo -e "${GREEN}✓ Services started${NC}"
     echo ""
     show_status
@@ -92,7 +92,7 @@ function test_mqtt() {
     echo -e "${GREEN}Testing MQTT connection...${NC}"
     echo -e "${YELLOW}Subscribing to devices/# topic (Ctrl+C to stop)${NC}"
     echo ""
-    
+
     # Check if mosquitto-clients is installed
     if command -v mosquitto_sub &> /dev/null; then
         mosquitto_sub -h localhost -p 1883 -t 'devices/#' -v
@@ -146,26 +146,26 @@ function show_status() {
     echo ""
     docker-compose ps
     echo ""
-    
+
     # Check if services are healthy
-    if docker-compose ps | grep -q "autoUniPostgres.*Up"; then
+    if docker-compose ps | grep -q "autoUniDb.*Up"; then
         echo -e "Database:  ${GREEN}✓ Running${NC}"
     else
         echo -e "Database:  ${RED}✗ Not running${NC}"
     fi
-    
+
     if docker-compose ps | grep -q "autoUniMqtt.*Up"; then
         echo -e "MQTT:      ${GREEN}✓ Running${NC}"
     else
         echo -e "MQTT:      ${RED}✗ Not running${NC}"
     fi
-    
+
     if docker-compose ps | grep -q "autoUniApi.*Up"; then
         echo -e "API:       ${GREEN}✓ Running${NC}"
     else
         echo -e "API:       ${RED}✗ Not running${NC}"
     fi
-    
+
     echo ""
 }
 
