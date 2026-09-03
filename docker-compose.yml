@@ -60,8 +60,6 @@ services:
     container_name: autoUniApi
     restart: unless-stopped
     depends_on:
-      postgres:
-        condition: service_healthy
       mqtt:
         condition: service_started
       db:
