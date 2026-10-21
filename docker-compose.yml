@@ -61,7 +61,7 @@ services:
       SMTP_PASS: ${SMTP_PASS}
       SMTP_FROM: ${SMTP_FROM}
     ports:
-      - '${PORT:-3000}:${PORT:-3000}'
+      - '${PORT:-3000}:3000'
     networks:
       - autouni-network
 

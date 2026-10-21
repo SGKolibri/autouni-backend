@@ -390,14 +390,30 @@ Content-Type: application/json
 ### Listar Todos os Dispositivos
 
 ```bash
-GET http://localhost:3000/api/devices
+GET http://localhost:3000/devices
 Authorization: Bearer {accessToken}
 ```
 
-**Query Parameters:**
-- `?type=LIGHT` - Filtrar por tipo
-- `?status=ON` - Filtrar por status
-- `?roomId=uuid` - Filtrar por sala
+**Query Parameters** (opcionais e combináveis; sem nenhum, retorna todos):
+- `?type=LIGHT` - Filtrar por tipo (`LIGHT`, `AC`, `PROJECTOR`, `SPEAKER`, `LOCK`, `SENSOR`, `OTHER`)
+- `?status=ON` - Filtrar por status (`ON`, `OFF`, `STANDBY`, `ERROR`)
+
+```bash
+GET http://localhost:3000/devices?status=ON&type=AC
+```
+
+Valores fora do enum retornam `400`, não são ignorados:
+
+```json
+{
+  "message": ["status must be one of the following values: ON, OFF, STANDBY, ERROR"],
+  "error": "Bad Request",
+  "statusCode": 400
+}
+```
+
+> Para filtrar por sala use a rota dedicada `GET /devices/room/{roomId}` — `?roomId=` não é
+> um filtro suportado nesta rota.
 
 **Resposta:**
 ```json
@@ -407,6 +423,7 @@ Authorization: Bearer {accessToken}
     "name": "Lâmpada Principal - A101",
     "type": "LIGHT",
     "status": "ON",
+    "online": true,
     "roomId": "room-1",
     "mqttTopic": "devices/light-a101-main",
     "metadata": {
@@ -414,10 +431,21 @@ Authorization: Bearer {accessToken}
       "model": "LED 20W",
       "powerW": 20
     },
-    "lastSeen": "2024-11-05T15:30:00.000Z"
+    "lastSeen": "2026-09-03T03:01:04.882Z"
   }
 ]
 ```
+
+**`status` x `online` — são coisas diferentes:**
+
+| Campo | Significado | Quem escreve |
+|-------|-------------|--------------|
+| `status` | Estado lógico do aparelho (`ON`/`OFF`/`STANDBY`/`ERROR`) | Rotas de controle HTTP e confirmação via MQTT |
+| `online` | O aparelho é alcançável (falou com o broker) | Exclusivamente o caminho MQTT, ou o override `PUT /devices/:id/online` |
+| `lastSeen` | Timestamp da última mensagem MQTT recebida do device | Exclusivamente o caminho MQTT |
+
+Um dispositivo pode estar `ON` e `online: false` — ligado, porém incomunicável. Escrita vinda
+de HTTP **nunca** altera `lastSeen`: comandar pela UI não é evidência de que o aparelho está vivo.
 
 ### Criar Novo Dispositivo
 
@@ -462,53 +490,93 @@ Content-Type: application/json
 ### Controlar Dispositivo Individual
 
 ```bash
-POST http://localhost:3000/api/devices/{deviceId}/control
+POST http://localhost:3000/devices/{deviceId}/control
 Authorization: Bearer {accessToken}
 Content-Type: application/json
 
 {
-  "status": "ON"
+  "command": "toggle"
 }
 ```
+
+O campo obrigatório é **`command`**, não `status`. Valores aceitos: `on`, `off`, `toggle`.
+
+`toggle` é resolvido a partir do status atual **no banco** — qualquer estado diferente de
+`ON` (inclusive `STANDBY` e `ERROR`) alterna para `ON`.
 
 **Com parâmetros adicionais (AC):**
 ```json
 {
-  "status": "ON",
-  "temperature": 22,
-  "mode": "cool"
+  "command": "on",
+  "temperature": 22
 }
 ```
 
 **Com dimmer (intensidade de luz):**
 ```json
 {
-  "status": "ON",
+  "command": "on",
   "intensity": 75
-}
-```
-
-### Controle em Massa (Bulk Control)
-
-```bash
-POST http://localhost:3000/api/devices/bulk-control
-Authorization: Bearer {accessToken}
-Content-Type: application/json
-
-{
-  "deviceIds": ["device-1", "device-2", "device-3"],
-  "status": "OFF"
 }
 ```
 
 **Resposta:**
 ```json
 {
-  "message": "Bulk control executed successfully",
-  "successCount": 3,
-  "failedCount": 0
+  "id": "e497d85a-b9c7-4c7f-9e9c-0aecb6e2a025",
+  "name": "Ar Condicionado A101",
+  "type": "AC",
+  "status": "ON",
+  "online": false,
+  "mqttTopic": "devices/ac-a101",
+  "lastSeen": null,
+  "pending": true
 }
 ```
+
+O que acontece por baixo:
+
+1. o comando é publicado em `{mqttTopic}/command` com payload `{ "state": "ON" }`
+   (mais `temperature`/`intensity` quando enviados);
+2. o status alvo é gravado **otimisticamente** no banco;
+3. o evento `device:status` é emitido no WebSocket.
+
+**`pending: true`** significa "comando entregue ao broker, aguardando confirmação do
+hardware". Vem `false` quando o dispositivo não tem `mqttTopic` ou o backend está
+desconectado do broker — nesse caso o estado gravado é tudo o que existe.
+
+Quando o hardware responde em `devices/{id}/status`, o backend sobrescreve o status com a
+confirmação real e aí sim atualiza `lastSeen` e `online`.
+
+> `value` também é aceito no body por compatibilidade com clientes antigos, mas é tratado
+> apenas como *hint*: `command` sempre vence.
+
+### Controle em Massa (Bulk Control)
+
+```bash
+POST http://localhost:3000/devices/bulk-control
+Authorization: Bearer {accessToken}
+Content-Type: application/json
+
+{
+  "deviceIds": ["uuid-device-1", "uuid-device-2", "uuid-device-3"],
+  "command": "off"
+}
+```
+
+**Resposta:**
+```json
+{
+  "message": "Command 'off' applied to 3 of 4 device(s)",
+  "successCount": 3,
+  "failedCount": 1,
+  "failedDevices": ["uuid-device-4"]
+}
+```
+
+Uma falha individual (device inexistente, por exemplo) **não aborta o lote**: os demais são
+processados e os IDs que falharam voltam em `failedDevices`. A rota responde `200` mesmo com
+falhas parciais — confira `failedCount`.
 
 ### Deletar Dispositivo
 
@@ -1177,10 +1245,13 @@ import io from 'socket.io-client';
 
 // Conectar com autenticação JWT
 const socket = io('http://localhost:3000', {
-  query: {
+  auth: {
     token: 'your-jwt-access-token'
   }
 });
+
+// `query: { token }` também é aceito pelo servidor (clientes antigos).
+// Sem token, o servidor derruba a conexão logo após o handshake.
 
 // Evento de conexão
 socket.on('connect', () => {
@@ -1195,60 +1266,77 @@ socket.on('disconnect', () => {
 
 ### Eventos Recebidos do Servidor
 
-#### device.status - Status de dispositivo alterado
+> Todos os nomes usam **dois-pontos** (`device:status`), não ponto. A convenção antiga
+> (`device.status`, `energy.reading`, `mqtt.raw`) foi removida e não é mais emitida.
+
+#### device:status - Status de dispositivo alterado
+
+Emitido tanto pelo caminho MQTT (confirmação do hardware) quanto pelas rotas HTTP de
+controle (`POST /devices/:id/control`, `POST /devices/bulk-control`, `PUT /devices/:id/status`),
+para que a UI de outros usuários acompanhe a mudança.
 
 ```javascript
-socket.on('device.status', (data) => {
+socket.on('device:status', (data) => {
   console.log('Status do dispositivo alterado:', data);
   // {
-  //   deviceId: 'device-1',
+  //   deviceId: 'e497d85a-b9c7-4c7f-9e9c-0aecb6e2a025',
   //   status: 'ON',
-  //   timestamp: '2024-11-05T15:30:00.000Z'
+  //   timestamp: '2026-09-03T03:01:03.046Z'
   // }
 });
 ```
 
-#### device.online - Dispositivo online/offline
+#### device:online - Dispositivo alcançável ou não
+
+`online` é independente de `status`: um dispositivo pode estar `ON` e offline.
 
 ```javascript
-socket.on('device.online', (data) => {
-  console.log('Status de conexão do dispositivo:', data);
+socket.on('device:online', (data) => {
+  console.log('Alcançabilidade do dispositivo:', data);
   // {
-  //   deviceId: 'device-1',
+  //   deviceId: 'e497d85a-b9c7-4c7f-9e9c-0aecb6e2a025',
   //   online: true,
-  //   timestamp: '2024-11-05T15:30:00.000Z'
+  //   timestamp: '2026-09-03T03:01:03.850Z'
   // }
 });
 ```
 
-#### energy.reading - Nova leitura energética
+#### energy:update - Nova leitura energética
 
 ```javascript
-socket.on('energy.reading', (data) => {
+socket.on('energy:update', (data) => {
   console.log('Nova leitura energética:', data);
   // {
-  //   deviceId: 'device-1',
-  //   reading: {
-  //     valueWh: 150.5,
-  //     voltage: 220,
-  //     current: 0.68
-  //   },
-  //   timestamp: '2024-11-05T15:30:00.000Z'
+  //   deviceId: 'e497d85a-b9c7-4c7f-9e9c-0aecb6e2a025',
+  //   power: 150.5,
+  //   energy: 150.5,
+  //   voltage: 220,
+  //   current: 0.68,
+  //   reading: { id, deviceId, valueWh, voltage, current, timestamp },
+  //   timestamp: '2026-09-03T03:01:04.449Z'
   // }
 });
 ```
 
-#### mqtt.raw - Mensagens MQTT brutas
+`power` e `energy` carregam o mesmo `valueWh` — o schema define o campo como
+"Wh (or watts at moment depending source)", então o que o device manda é a leitura
+instantânea. O registro completo continua disponível em `reading`.
+
+#### mqtt:raw - Mensagens MQTT sem dispositivo cadastrado
 
 ```javascript
-socket.on('mqtt.raw', (data) => {
+socket.on('mqtt:raw', (data) => {
   console.log('Mensagem MQTT:', data);
   // {
-  //   topic: 'devices/sensor-temp-a103/data',
-  //   payload: { temperature: 24.5, humidity: 65 }
+  //   topic: 'devices/nao-cadastrado/status',
+  //   payload: 'ON'
   // }
 });
 ```
+
+Útil para descobrir dispositivos que estão publicando mas ainda não têm `mqttTopic`
+cadastrado. Quando o device é conhecido mas o sufixo do tópico não é tratado, o payload
+inclui também `deviceId`.
 
 ### Juntar-se a uma Sala (Room)
 
@@ -1478,12 +1566,12 @@ const response = await fetch('http://localhost:3000/api/energy/stats', {
 const initialStats = await response.json();
 
 // Atualiza em tempo real
-socket.on('energy.reading', (data) => {
+socket.on('energy:update', (data) => {
   // Atualiza gráfico com nova leitura
   updateEnergyChart(data);
 });
 
-socket.on('device.status', (data) => {
+socket.on('device:status', (data) => {
   // Atualiza status do dispositivo na UI
   updateDeviceStatus(data.deviceId, data.status);
 });

@@ -98,6 +98,7 @@ model User {
   reports       Report[]
   automations   Automation[]   @relation("AutomationCreator")
   refreshTokens RefreshToken[]
+  pushTokens    PushToken[]
 }
 
 model RefreshToken {
@@ -107,6 +108,26 @@ model RefreshToken {
   tokenHash String
   expiresAt DateTime
   createdAt DateTime @default(now())
+}
+
+enum PushPlatform {
+  ANDROID
+  IOS
+  WEB
+}
+
+// Token de push (FCM) de um aparelho. Um token pertence a um único usuário:
+// ao entrar com outra conta no mesmo aparelho, o token muda de dono.
+model PushToken {
+  id        String       @id @default(uuid())
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  token     String       @unique
+  platform  PushPlatform
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([userId])
 }
 
 model Building {
@@ -147,17 +168,26 @@ model Room {
 }
 
 model Device {
-  id        String       @id @default(uuid())
-  name      String
-  room      Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  roomId    String
-  type      DeviceType   @default(OTHER)
-  status    DeviceStatus @default(OFF)
+  id     String @id @default(uuid())
+  name   String
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId String
+
+  type   DeviceType   @default(OTHER)
+  // Estado lógico do aparelho: o relé está fechado?
+  status DeviceStatus @default(OFF)
+  // Alcançabilidade: o aparelho falou com o broker MQTT?
+  // Independente de `status` — um device pode estar ON e offline.
+  // Só é escrito pelo caminho MQTT (ou pela rota administrativa PUT /devices/:id/online).
+  online Boolean      @default(false)
+
   mqttTopic String?
   metadata  Json?
+  // Heartbeat: última comunicação vinda do device via MQTT.
+  // Nunca é atualizado por escrita originada em HTTP.
   lastSeen  DateTime?
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   readings EnergyReading[]
 }
