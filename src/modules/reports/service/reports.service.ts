@@ -1,21 +1,43 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Report, ReportType, ReportStatus } from '@prisma/client';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ReportsRepository } from '../repository/reports.repository';
+import { PrismaService } from 'prisma/prisma.service';
 import {
   CreateReportData,
   UpdateReportData,
 } from '../interfaces/reports.interface';
+import { ReportCreatedEvent } from '../events/report-created.event';
 
 @Injectable()
 export class ReportsService {
-  constructor(private readonly reportsRepository: ReportsRepository) {}
+  constructor(
+    private readonly reportsRepository: ReportsRepository,
+    private readonly eventEmitter: EventEmitter2,
+    private readonly prisma: PrismaService,
+  ) {}
 
   async create(data: CreateReportData): Promise<Report> {
     const report = await this.reportsRepository.create(data);
 
-    // TODO: Implementar geração assíncrona do relatório
-    // Pode usar um sistema de filas (Bull, BullMQ) para processar em background
-    // this.queueService.addJob('generate-report', { reportId: report.id });
+    let creatorEmail = '';
+    let creatorName = '';
+    if (data.createdById) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: data.createdById },
+        select: { email: true, name: true },
+      });
+      creatorEmail = user?.email ?? '';
+      creatorName = user?.name ?? '';
+    }
+
+    const event: ReportCreatedEvent = {
+      reportId: report.id,
+      createdById: data.createdById,
+      creatorEmail,
+      creatorName,
+    };
+    this.eventEmitter.emit('report.created', event);
 
     return report;
   }

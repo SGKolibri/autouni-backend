@@ -24,7 +24,10 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
 
   handleConnection(client: Socket) {
     try {
-      const token = client.handshake.query?.token as string;
+      // socket.io v4 entrega `auth: { token }` em handshake.auth. Aceitamos as
+      // duas formas: o frontend usa `auth`, clientes antigos usam `query`.
+      const token = (client.handshake.auth?.token ??
+        client.handshake.query?.token) as string;
       if (!token) {
         client.disconnect(true);
         return;

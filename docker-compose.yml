@@ -50,7 +50,8 @@ services:
       DATABASE_URL: postgresql://postgres:autounidockeradmin@db:5432/autounidb?schema=public
       # MQTT dentro do container usa o hostname do serviço (mqtt)
       MQTT_URL: ${MQTT_URL:-mqtt://mqtt:1883}
-      PORT: ${PORT:-3000}
+      # Porta interna fixa da API no container
+      PORT: 3000
       JWT_SECRET: ${JWT_SECRET}
       ROOT_EMAIL: ${ROOT_EMAIL}
       ROOT_PASSWORD: ${ROOT_PASSWORD}
@@ -60,11 +61,12 @@ services:
       SMTP_PASS: ${SMTP_PASS}
       SMTP_FROM: ${SMTP_FROM}
     ports:
-      - '${PORT:-3000}:${PORT:-3000}'
+      - '${PORT:-3000}:3000'
     networks:
       - autouni-network
 
 volumes:
+  postgres-data:
   mqtt-data:
   mqtt-logs:
   db-data:

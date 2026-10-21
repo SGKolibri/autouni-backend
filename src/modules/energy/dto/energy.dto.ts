@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsNumber, IsOptional, IsDateString, Min, IsPositive } from 'class-validator';
+import { IsString, IsNotEmpty, IsNumber, IsOptional, IsDateString, Min, IsPositive, IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateEnergyReadingDto {
@@ -55,6 +55,73 @@ export class EnergyStatsDto {
   @IsOptional()
   @IsDateString()
   to?: string;
+}
+
+export class EnergyHistoryQueryDto {
+  @ApiPropertyOptional({
+    description: 'Time period — hourly buckets for today, daily for week/month',
+    enum: ['today', 'week', 'month'],
+    example: 'today',
+  })
+  @IsOptional()
+  @IsIn(['today', 'week', 'month'])
+  period?: 'today' | 'week' | 'month';
+
+  @ApiPropertyOptional({
+    description: 'Hierarchy level to scope the history',
+    enum: ['general', 'building', 'floor', 'room', 'device'],
+    example: 'general',
+  })
+  @IsOptional()
+  @IsIn(['general', 'building', 'floor', 'room', 'device'])
+  level?: 'general' | 'building' | 'floor' | 'room' | 'device';
+
+  @ApiPropertyOptional({
+    description: 'Entity ID (required when level is not general)',
+    example: 'uuid-building-123',
+  })
+  @IsOptional()
+  @IsString()
+  id?: string;
+}
+
+export class EnergyComparisonQueryDto {
+  @ApiPropertyOptional({
+    description: 'Hierarchy level to compare (general compares buildings, building compares its floors, etc.)',
+    enum: ['general', 'building', 'floor', 'room'],
+    example: 'general',
+  })
+  @IsOptional()
+  @IsIn(['general', 'building', 'floor', 'room'])
+  level?: 'general' | 'building' | 'floor' | 'room';
+
+  @ApiPropertyOptional({
+    description: 'Parent entity ID (required when level is not general)',
+    example: 'uuid-building-123',
+  })
+  @IsOptional()
+  @IsString()
+  id?: string;
+
+  @ApiPropertyOptional({
+    description: 'Time period for comparison stats',
+    enum: ['today', 'week', 'month'],
+    example: 'today',
+  })
+  @IsOptional()
+  @IsIn(['today', 'week', 'month'])
+  period?: 'today' | 'week' | 'month';
+}
+
+export class GlobalStatsQueryDto {
+  @ApiPropertyOptional({
+    description: 'Preset time period for statistics',
+    enum: ['today', 'week', 'month'],
+    example: 'today',
+  })
+  @IsOptional()
+  @IsIn(['today', 'week', 'month'])
+  period?: 'today' | 'week' | 'month';
 }
 
 export class CleanupReadingsDto {

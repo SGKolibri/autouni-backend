@@ -41,8 +41,11 @@ export class BuildingsController {
         name: 'Prédio Central',
         description: 'Prédio administrativo principal',
         location: 'Campus Central',
+        totalDevices: 18,
+        activeDevices: 6,
+        todayEnergyKwh: 12.4,
+        dailyConsumptionKwh: 12.4,
         totalEnergy: 0,
-        activeDevices: 0,
         createdAt: '2025-01-11T10:00:00.000Z',
         updatedAt: '2025-01-11T10:00:00.000Z'
       }
@@ -105,8 +108,11 @@ export class BuildingsController {
         totalFloors: 5,
         totalRooms: 50,
         totalDevices: 150,
-        totalEnergy: 5000.50,
-        activeDevices: 120
+        activeDevices: 120,
+        todayEnergyKwh: 5000.5,
+        dailyConsumptionKwh: 5000.5,
+        totalEnergy: 5000.5,
+        energyPeriod: 'today',
       }
     }
   })

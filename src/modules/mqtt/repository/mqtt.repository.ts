@@ -30,12 +30,18 @@ export class MqttRepository implements IMqttRepository {
     });
   }
 
+  /**
+   * Este é o único caminho autorizado a escrever `lastSeen` e `online`:
+   * uma mensagem chegando pelo broker é a evidência de que o aparelho está vivo.
+   * Escritas vindas de HTTP (UI, automações) não tocam nesses campos.
+   */
   async updateDeviceStatus(deviceId: string, status: string): Promise<Device> {
     return this.prisma.device.update({
       where: { id: deviceId },
       data: {
         status: status as any,
         lastSeen: new Date(),
+        online: true,
       },
     });
   }
@@ -44,8 +50,11 @@ export class MqttRepository implements IMqttRepository {
     return this.prisma.device.update({
       where: { id: deviceId },
       data: {
+        online,
+        // O heartbeat sobe mesmo quando o payload diz `false`: a mensagem chegou,
+        // então houve comunicação. Um LWT publicado pelo broker após a queda é o
+        // caso em que `online: false` e `lastSeen` recente convivem.
         lastSeen: new Date(),
-        // online status can be inferred from lastSeen timestamp
       },
     });
   }
@@ -56,13 +65,22 @@ export class MqttRepository implements IMqttRepository {
     voltage?: number | null;
     current?: number | null;
   }): Promise<EnergyReading> {
-    return this.prisma.energyReading.create({
-      data: {
-        deviceId: data.deviceId,
-        valueWh: data.valueWh,
-        voltage: data.voltage,
-        current: data.current,
-      },
-    });
+    const [reading] = await this.prisma.$transaction([
+      this.prisma.energyReading.create({
+        data: {
+          deviceId: data.deviceId,
+          valueWh: data.valueWh,
+          voltage: data.voltage,
+          current: data.current,
+        },
+      }),
+      // Telemetria também é heartbeat.
+      this.prisma.device.update({
+        where: { id: data.deviceId },
+        data: { lastSeen: new Date(), online: true },
+      }),
+    ]);
+
+    return reading;
   }
 }

@@ -35,23 +35,27 @@ Guia de configuração e integração MQTT do AutoUni. Descreve o broker, os tó
 │              │   devices/+/online           │                  │
 └──────────────┘                              └────────┬─────────┘
        ▲                                               │ subscribe
-       │  publish (automações)                         ▼
+       │  devices/<id>/command                         ▼
        │                                      ┌──────────────────┐
-       └───────────────────────────────────── │   MqttService    │
-                                              │   (NestJS)       │
-                                              └────────┬─────────┘
-                                                       │
-                                    ┌──────────────────┴──────────────────┐
-                                    ▼                                     ▼
-                            ┌───────────────┐                   ┌──────────────────┐
-                            │ MqttRepository│                   │ RealtimeGateway  │
-                            │  (Prisma)     │                   │  (Socket.IO)     │
-                            └───────┬───────┘                   └────────┬─────────┘
-                                    ▼                                    ▼
-                            Device.status                        device.status
-                            Device.lastSeen                      device.online
-                            EnergyReading                        energy.reading
-                                                                 mqtt.raw
+       │  ┌────────────────────────────────── │   MqttService    │
+       │  │  publish                          │   (NestJS)       │
+       │  │                                   └────────┬─────────┘
+       │  ├── DevicesService (rotas de controle)       │
+       │  └── AutomationsService (agendamentos)        │
+       │                                               │
+       │                    ┌──────────────────────────┴──────────┐
+       │                    ▼                                     ▼
+       │            ┌───────────────┐                   ┌──────────────────┐
+       │            │ MqttRepository│                   │ RealtimeGateway  │
+       │            │  (Prisma)     │                   │  (Socket.IO)     │
+       │            └───────┬───────┘                   └────────┬─────────┘
+       │                    ▼                                    ▼
+       │            Device.status                        device:status
+       │            Device.online   ◄── só por aqui      device:online
+       │            Device.lastSeen ◄── só por aqui      energy:update
+       │            EnergyReading                        mqtt:raw
+       │
+       └── confirmação do hardware sobrescreve a gravação otimista
 ```
 
 O `MqttModule` é `@Global()` (`src/modules/mqtt/mqtt.module.ts`), então `MqttService` e `MqttRepository` ficam disponíveis em toda a aplicação sem import explícito.
@@ -198,10 +202,10 @@ MQTT_URL=mqtt://localhost:1883
 Assinados automaticamente em `subscribeToDefaultTopics()`, com **QoS 0**, logo após o evento `connect`:
 
 ```
-devices/+/status     → atualiza Device.status e Device.lastSeen
-devices/+/energy     → cria EnergyReading
-devices/+/reading    → cria EnergyReading (alias de /energy)
-devices/+/online     → atualiza Device.lastSeen
+devices/+/status     → Device.status + heartbeat (lastSeen, online=true)
+devices/+/energy     → cria EnergyReading + heartbeat
+devices/+/reading    → cria EnergyReading + heartbeat (alias de /energy)
+devices/+/online     → Device.online (o booleano do payload) + lastSeen
 ```
 
 O curinga `+` casa **exatamente um** segmento. Ou seja, o tópico publicado precisa ter exatamente três níveis: `devices/<identificador>/<sufixo>`. Um tópico como `devices/predio-a/sala-101/status` **não** é recebido.
@@ -241,7 +245,7 @@ Regras importantes:
 
 - `Device.mqttTopic` é `String?` **sem constraint de unicidade** (`prisma/schema.prisma`). Se dois dispositivos tiverem o mesmo `mqttTopic`, o `findFirst` resolve para um deles de forma não determinística. Trate `mqttTopic` como único por convenção.
 - Dispositivo sem `mqttTopic` cadastrado nunca é resolvido — as mensagens caem no caminho "não identificado".
-- Quando nenhum dispositivo casa, o backend loga `No device found for topic <topic>` e emite o evento WebSocket `mqtt.raw` com o payload bruto, **sem persistir nada**. Isso é útil para descobrir dispositivos novos ainda não cadastrados.
+- Quando nenhum dispositivo casa, o backend loga `No device found for topic <topic>` e emite o evento WebSocket `mqtt:raw` com o payload bruto, **sem persistir nada**. Isso é útil para descobrir dispositivos novos ainda não cadastrados.
 
 ---
 
@@ -313,7 +317,23 @@ true
 
 Interpretação: se o payload for objeto, lê `payload.online`; se for string, considera online apenas se for exatamente `'true'` ou `'1'`.
 
-> **O estado online não é persistido.** O schema Prisma não tem coluna `online` — `updateDeviceOnlineStatus()` apenas atualiza `Device.lastSeen`. O valor booleano vai só para o evento WebSocket `device.online`. Para saber se um dispositivo está online, compare `lastSeen` com o intervalo de heartbeat esperado.
+O booleano é persistido em `Device.online` e o evento `device:online` é emitido no WebSocket.
+
+`lastSeen` sobe mesmo quando o payload diz `false`: a mensagem chegou, então houve comunicação. Um LWT publicado pelo broker depois da queda é justamente o caso em que `online: false` e `lastSeen` recente convivem.
+
+### `status` x `online` x `lastSeen`
+
+Três campos independentes que costumam ser confundidos:
+
+| Campo | Pergunta que responde | Quem escreve |
+|-------|----------------------|--------------|
+| `status` | O relé está fechado? (`ON`/`OFF`/`STANDBY`/`ERROR`) | Rotas de controle HTTP (otimista) e confirmação via MQTT (verdade) |
+| `online` | O aparelho é alcançável? | **Só o caminho MQTT**, ou o override `PUT /devices/:id/online` |
+| `lastSeen` | Quando ele falou pela última vez? | **Só o caminho MQTT** |
+
+Um dispositivo pode estar `ON` e `online: false` — ligado, mas incomunicável. E escrita vinda de HTTP nunca carimba `lastSeen`: comandar pela UI não é evidência de que o aparelho está vivo.
+
+Qualquer mensagem inbound (`/status`, `/energy`, `/reading`, `/online`) conta como heartbeat: atualiza `lastSeen` e, exceto no caso de um `online: false` explícito, marca `online = true`.
 
 ---
 
@@ -334,9 +354,30 @@ Comportamento de `publish()`:
 - Padrões: `qos: 0`, `retain: false`.
 - **Se o cliente não estiver conectado, a chamada é descartada** com um warn (`Cannot publish: MQTT client not connected`). Não há fila nem exceção — quem chama não percebe a perda. Use `isConnected()` antes de operações críticas.
 
-### Único produtor hoje: automações
+### Produtor 1: rotas de controle de dispositivo
 
-`AutomationsService.executeAutomation()` (`src/modules/automations/service/automations.service.ts:178`) é o único lugar que publica. O campo `Automation.action` é um JSON; se contiver `topic`, ele é publicado:
+`DevicesService` publica em `{device.mqttTopic}/command` a partir de três rotas:
+
+| Rota | Payload publicado |
+|------|-------------------|
+| `POST /devices/:id/control` | `{ "state": "ON" }` (+ `temperature`/`intensity` quando enviados) |
+| `POST /devices/bulk-control` | idem, uma publicação por device do lote |
+| `PUT /devices/:id/status` | `{ "state": "ON" }` |
+
+O fluxo em todas: resolve o status alvo → publica no broker → grava o status **otimisticamente** no banco → emite `device:status` no WebSocket.
+
+A gravação é otimista de propósito: em vez de um estado intermediário tipo `STANDBY` ("comando em trânsito"), o status alvo vai direto para o banco. Sem hardware respondendo, um estado pendente nunca seria confirmado e a UI ficaria travada. Quando o dispositivo existe de fato, a confirmação chega em `devices/<id>/status` e sobrescreve o valor com a verdade — aí sim atualizando `lastSeen` e `online`.
+
+A resposta traz `pending: true` quando a mensagem realmente saiu no broker. Vem `false` se o device não tem `mqttTopic` ou se o cliente MQTT está desconectado; nesses casos o estado gravado é tudo o que existe, e o log registra o motivo:
+
+```
+Device <id> has no mqttTopic; state persisted without publishing
+MQTT not connected; command for device <id> was not published
+```
+
+### Produtor 2: automações
+
+`AutomationsService.executeAutomation()` (`src/modules/automations/service/automations.service.ts:178`) também publica. O campo `Automation.action` é um JSON; se contiver `topic`, ele é publicado:
 
 ```json
 {
@@ -357,37 +398,47 @@ Firmwares devem assinar:
 devices/<id>/command
 ```
 
-Formato de payload sugerido pela documentação do projeto:
+Formato publicado pelo backend:
 
 ```json
-{ "state": "ON", "temperature": 22, "mode": "cool" }
+{ "state": "ON", "temperature": 22, "intensity": 75 }
 ```
 
-> ⚠️ Ver [Limitações conhecidas](#-limitações-conhecidas): os endpoints REST de controle de dispositivo **não** publicam nesse tópico hoje.
+`state` é sempre um valor do enum `DeviceStatus` (`ON`/`OFF`/`STANDBY`/`ERROR`). `temperature` e `intensity` só aparecem quando o cliente os enviou na rota de controle.
+
+O firmware deve confirmar publicando o estado real em `devices/<id>/status` depois de acionar o hardware — é essa confirmação que fecha o ciclo e marca o device como online.
 
 ---
 
 ## 🔄 Eventos WebSocket correspondentes
 
-Cada mensagem MQTT processada gera um broadcast Socket.IO via `RealtimeGateway`:
+Cada mensagem MQTT processada gera um broadcast Socket.IO via `RealtimeGateway`. Os nomes usam **dois-pontos** — a convenção antiga com ponto (`device.status`, `energy.reading`, `mqtt.raw`) foi removida e não é mais emitida.
 
-| Tópico MQTT | Evento WebSocket | Payload |
-|-------------|------------------|---------|
-| `devices/+/status` | `device.status` | `{ deviceId, status, timestamp }` |
-| `devices/+/online` | `device.online` | `{ deviceId, online, timestamp }` |
-| `devices/+/energy` \| `/reading` | `energy.reading` | `{ deviceId, reading, timestamp }` |
-| tópico sem dispositivo cadastrado | `mqtt.raw` | `{ topic, payload }` |
-| tópico conhecido, sufixo não tratado | `mqtt.raw` | `{ topic, payload, deviceId }` |
+| Origem | Evento WebSocket | Payload |
+|--------|------------------|---------|
+| `devices/+/status` **ou** rotas de controle HTTP | `device:status` | `{ deviceId, status, timestamp }` |
+| `devices/+/online` **ou** `PUT /devices/:id/online` | `device:online` | `{ deviceId, online, timestamp }` |
+| `devices/+/energy` \| `/reading` | `energy:update` | `{ deviceId, power, energy, voltage, current, reading, timestamp }` |
+| tópico sem dispositivo cadastrado | `mqtt:raw` | `{ topic, payload }` |
+| tópico conhecido, sufixo não tratado | `mqtt:raw` | `{ topic, payload, deviceId }` |
+
+Em `energy:update`, `power` e `energy` carregam o mesmo `valueWh` (o schema define o campo como "Wh (or watts at moment depending source)"); o registro completo continua em `reading`.
+
+`device:status` sai tanto do caminho MQTT quanto das rotas HTTP de controle — sem isso, a UI dos demais usuários não acompanharia um comando disparado por outra pessoa.
 
 A emissão usa optional chaining (`this.realtime.server?.emit`): se o gateway ainda não inicializou, o evento é silenciosamente descartado, mas a escrita no banco já aconteceu.
 
 Consumo no front-end:
 
 ```javascript
-const socket = io('http://localhost:3000', { query: { token: accessToken } });
+// `auth` é a forma recomendada no socket.io v4; `query` também é aceita.
+// Sem token, o servidor derruba a conexão logo após o handshake.
+const socket = io('http://localhost:3000', { auth: { token: accessToken } });
 
-socket.on('device.status', ({ deviceId, status }) => { /* ... */ });
-socket.on('energy.reading', ({ deviceId, reading }) => { /* ... */ });
+socket.on('device:status', ({ deviceId, status }) => { /* ... */ });
+socket.on('device:online', ({ deviceId, online }) => { /* ... */ });
+socket.on('energy:update', ({ deviceId, power }) => { /* ... */ });
+socket.on('mqtt:raw', ({ topic, payload }) => { /* ... */ });
 ```
 
 ---
@@ -603,7 +654,7 @@ docker exec -it autoUniDb psql -U postgres -d autounidb \
 
 Grave o **tópico base** (`devices/light-101`), sem o sufixo. Ver [Como um tópico vira um dispositivo](#-como-um-tópico-vira-um-dispositivo).
 
-Enquanto não casar, a mensagem ainda aparece no WebSocket como `mqtt.raw` — útil para ler o identificador que o dispositivo está usando de fato.
+Enquanto não casar, a mensagem ainda aparece no WebSocket como `mqtt:raw` — útil para ler o identificador que o dispositivo está usando de fato.
 
 ### Mensagem chega, mas o status não muda
 
@@ -672,26 +723,27 @@ Configure `cafile` / `certfile` / `keyfile` no listener 8883 e use `MQTT_URL=mqt
 
 ## ⚠️ Limitações conhecidas
 
-Divergências entre a implementação atual e o que `README.md` / `USO.md` descrevem — todas verificadas no código:
+As lacunas que existiam entre a documentação e o código foram fechadas: `POST /devices/:id/control` e `POST /devices/bulk-control` existem, as rotas de controle publicam em `devices/<id>/command`, `Device.online` é uma coluna real e os eventos WebSocket foram padronizados em dois-pontos.
 
-| Item | Documentado | Implementação atual |
-|------|-------------|---------------------|
-| Controle de dispositivo via REST | `PUT /devices/:id/status` liga/desliga o dispositivo | `DevicesService.updateStatus()` apenas grava no banco. **Não publica em `devices/<id>/command`.** O dispositivo físico não é acionado. |
-| Bulk control | `POST /devices/bulk-control` | Endpoint não existe no `DevicesController`. |
-| Tópico `/command` | Publicado pelo backend | Publicado **somente** por automações, e apenas com o tópico literal gravado em `Automation.action`. |
-| Estado online | Persistido no dispositivo | Não há coluna `online` no schema. Só `lastSeen` é atualizado; o booleano vive apenas no evento WebSocket. |
-| Tópico `devices/+/reading` | Não mencionado | Subscrito e tratado como alias de `/energy`. |
-| Porta 9001 | Exposta para WebSocket | Publicada no host, mas sem listener no broker. |
+O que **ainda** vale saber:
 
-Outras limitações estruturais:
+| Item | Situação |
+|------|----------|
+| Porta 9001 | Publicada no host, mas sem listener no broker — ver [Habilitando WebSocket](#habilitando-websocket-opcional). |
+| `MQTT_USERNAME` / `MQTT_PASSWORD` | Lidas pelo `MqttService`, mas **não** repassadas ao container `app` no `docker-compose.yml`. |
+| Timeout de `online` | Nada marca um device como offline por inatividade. `online` só muda quando chega uma mensagem MQTT (ou pelo override HTTP). Um device que simplesmente some fica `online: true` com `lastSeen` envelhecendo — a menos que publique LWT. |
+| `device:update` | O frontend tem um listener para esse evento, mas nada o emite. Mudanças por `PUT /devices/:id` não geram broadcast. |
+
+Limitações estruturais do transporte:
 
 - **Sem QoS acima de 0 nas assinaturas padrão.** Mensagens publicadas durante um restart do backend são perdidas.
 - **Sem sessão persistente.** O cliente conecta com sessão limpa; nada é enfileirado no broker enquanto o backend está fora.
 - **`Device.mqttTopic` não é `@unique`.** Duplicatas resolvem de forma não determinística via `findFirst`.
 - **Erros de processamento são engolidos.** O `try/catch` de `handleMessage` loga e segue; não há dead-letter nem retry.
-- **`publish()` falha em silêncio** quando desconectado — retorna `void`, sem exceção nem fila.
+- **`publish()` falha em silêncio** quando desconectado — daí as rotas de controle checarem `isConnected()` antes e devolverem `pending: false` em vez de mentir para a UI.
+- **Confirmação não é garantida.** Como QoS 0 não confirma entrega, `pending: true` significa "saiu daqui", não "o aparelho recebeu". A única confirmação real é o device publicar de volta em `devices/<id>/status`.
 
-Para fechar a lacuna mais relevante (REST → MQTT), o caminho é injetar `MqttService` em `DevicesService` e publicar em `${device.mqttTopic}/command` dentro de `updateStatus()`, tratando `mqttTopic` nulo.
+O próximo passo natural é um job periódico que marque `online = false` para devices cujo `lastSeen` ultrapassou o intervalo de heartbeat esperado — a coluna já está pronta para isso.
 
 ---
 

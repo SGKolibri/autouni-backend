@@ -43,11 +43,11 @@ export class AutomationsService {
 
   async findById(id: string): Promise<Automation> {
     const automation = await this.automationsRepository.findById(id);
-    
+
     if (!automation) {
       throw new NotFoundException(`Automation with ID ${id} not found`);
     }
-    
+
     return automation;
   }
 
@@ -95,7 +95,7 @@ export class AutomationsService {
 
   async executeManually(id: string): Promise<void> {
     const automation = await this.findById(id);
-    
+
     if (!automation.enabled) {
       throw new BadRequestException('Automation is disabled');
     }
@@ -109,7 +109,7 @@ export class AutomationsService {
     try {
       const scheduleAutomations = await this.automationsRepository.findByTriggerType(TriggerType.SCHEDULE);
       const now = new Date();
-      
+
       for (const automation of scheduleAutomations) {
         try {
           if (!automation.cron) continue;
@@ -149,7 +149,7 @@ export class AutomationsService {
       });
 
       const nextRun = interval.next().toDate();
-      
+
       // Check if the next scheduled run is in the past (meaning it should have run)
       return nextRun <= now;
     } catch (err) {
@@ -165,8 +165,8 @@ export class AutomationsService {
       // Parse action
       let action: AutomationAction;
       try {
-        action = typeof automation.action === 'string' 
-          ? JSON.parse(automation.action) 
+        action = typeof automation.action === 'string'
+          ? JSON.parse(automation.action)
           : automation.action as any;
       } catch {
         throw new Error('Invalid action format');
@@ -194,7 +194,7 @@ export class AutomationsService {
       this.logger.log(`Automation ${automation.id} executed successfully`);
     } catch (err) {
       this.logger.error(`Error executing automation ${automation.id}`, err);
-      
+
       // Create failure history entry
       await this.automationsRepository.createHistory({
         automationId: automation.id,
@@ -208,7 +208,7 @@ export class AutomationsService {
 
   async getAutomationStats() {
     const all = await this.findAll();
-    
+
     return {
       total: all.length,
       enabled: all.filter(a => a.enabled).length,

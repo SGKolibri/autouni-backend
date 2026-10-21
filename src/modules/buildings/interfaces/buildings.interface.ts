@@ -1,10 +1,21 @@
 import { Building } from '@prisma/client';
+import { BuildingLike } from '../utils/building-energy.utils';
+import { BuildingConsumptionSnapshot } from '../utils/building-energy.utils';
+
+export type BuildingWithRelations = Building & BuildingLike;
+
+export type BuildingWithEnergyToday = BuildingWithRelations &
+  BuildingConsumptionSnapshot & {
+    /** Timestamp of the most recent EnergyReading in the DB (global). Null if no data exists. */
+    lastReadingAt: Date | null;
+  };
 
 export interface IBuildingsRepository {
   create(data: CreateBuildingData): Promise<Building>;
   findAll(): Promise<Building[]>;
   findById(id: string): Promise<Building | null>;
   findByIdWithRelations(id: string): Promise<Building | null>;
+  findDevicesByBuildingId?(buildingId: string): Promise<Array<{ status?: string | null; metadata?: unknown }>>;
   update(id: string, data: UpdateBuildingData): Promise<Building>;
   delete(id: string): Promise<Building>;
   getStats(id: string): Promise<BuildingStats>;
@@ -30,6 +41,15 @@ export interface BuildingStats {
   totalFloors: number;
   totalRooms: number;
   totalDevices: number;
-  totalEnergy: number;
   activeDevices: number;
+  totalKwh: number;
+  count: number;
+  todayEnergyKwh: number;
+  dailyConsumptionKwh: number;
+  totalEnergy: number;
+  energyPeriod: 'today';
+  lastReadingAt: Date | null;
+  hasData: boolean;
 }
+
+export type BuildingConsumption = BuildingConsumptionSnapshot;

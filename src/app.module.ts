@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { UserModule } from './modules/user/user.module';
@@ -16,6 +19,7 @@ import { FloorsModule } from './modules/floors/floors.module';
 import { RoomsModule } from './modules/rooms/rooms.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ReportsModule } from './modules/reports/reports.module';
+import { PushModule } from './modules/push/push.module';
 
 @Module({
   imports: [
@@ -24,6 +28,8 @@ import { ReportsModule } from './modules/reports/reports.module';
       secret: process.env.JWT_SECRET,
       signOptions: { expiresIn: '1h' },
     }),
+    ThrottlerModule.forRoot([{ name: 'default', ttl: 60000, limit: 60 }]),
+    ScheduleModule.forRoot(),
     EventEmitterModule.forRoot(),
     RealtimeModule,
     UserModule,
@@ -37,8 +43,9 @@ import { ReportsModule } from './modules/reports/reports.module';
     AutomationsModule,
     NotificationsModule,
     ReportsModule,
+    PushModule,
   ],
   controllers: [AppController],
-  providers: [AppService, PrismaService],
+  providers: [AppService, PrismaService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

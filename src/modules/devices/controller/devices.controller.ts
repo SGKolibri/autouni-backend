@@ -22,7 +22,10 @@ import {
 import { DevicesService } from '../service/devices.service';
 import { CreateDeviceDto } from '../dto/create-device.dto';
 import { UpdateDeviceDto } from '../dto/update-device.dto';
-import { DeviceStatus } from '../interfaces/devices.interface';
+import { ControlDeviceDto } from '../dto/control-device.dto';
+import { BulkControlDeviceDto } from '../dto/bulk-control-device.dto';
+import { FindDevicesQueryDto } from '../dto/find-devices-query.dto';
+import { DeviceStatus, DeviceType } from '../interfaces/devices.interface';
 import { AuthGuard } from '../../../guards/auth.guard';
 
 @UseGuards(AuthGuard)
@@ -73,10 +76,61 @@ export class DevicesController {
     return this.devicesService.create(createDeviceDto);
   }
 
+  // Precisa vir antes de qualquer rota `@Post(':id/...')`, senão o Nest
+  // interpreta 'bulk-control' como um `:id`.
+  @Post('bulk-control')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Control multiple devices at once',
+    description:
+      'Aplica o mesmo comando a uma lista de dispositivos. Falhas individuais não abortam o lote: ' +
+      'a resposta traz a contagem de sucessos e os IDs que falharam.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Bulk command processed',
+    schema: {
+      example: {
+        message: "Command 'off' applied to 3 of 4 device(s)",
+        successCount: 3,
+        failedCount: 1,
+        failedDevices: ['uuid-device-4'],
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request',
+    schema: {
+      example: {
+        statusCode: 400,
+        message: ['command must be one of: on, off, toggle'],
+        error: 'Bad Request',
+      },
+    },
+  })
+  async bulkControl(@Body() bulkControlDto: BulkControlDeviceDto) {
+    return this.devicesService.bulkControl(bulkControlDto);
+  }
+
   @Get()
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Get all devices',
-    description: 'Retorna lista completa de todos os dispositivos cadastrados'
+    description:
+      'Retorna a lista de dispositivos cadastrados. Aceita filtros opcionais por status e tipo; ' +
+      'sem parâmetros, retorna todos.'
+  })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: DeviceStatus,
+    description: 'Filtra por status operacional',
+  })
+  @ApiQuery({
+    name: 'type',
+    required: false,
+    enum: DeviceType,
+    description: 'Filtra por tipo de dispositivo',
   })
   @ApiResponse({ 
     status: 200, 
@@ -104,8 +158,8 @@ export class DevicesController {
       ]
     }
   })
-  async findAll() {
-    return this.devicesService.findAll();
+  async findAll(@Query() query: FindDevicesQueryDto) {
+    return this.devicesService.findAll(query);
   }
 
   @Get('stats')
@@ -202,8 +256,69 @@ export class DevicesController {
     return this.devicesService.findById(id);
   }
 
+  @Post(':id/control')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Control a device',
+    description:
+      'Executa um comando (`on` / `off` / `toggle`), publica em `{mqttTopic}/command` e grava o ' +
+      'status alvo. `toggle` é resolvido a partir do estado atual no banco. ' +
+      '`pending: true` significa que o comando saiu no broker e aguarda confirmação do hardware.',
+  })
+  @ApiParam({ name: 'id', description: 'Device UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Command accepted',
+    schema: {
+      example: {
+        id: 'uuid-device-1',
+        name: 'Ar Condicionado A101',
+        type: 'AC',
+        status: 'ON',
+        online: false,
+        mqttTopic: 'devices/ac-a101',
+        lastSeen: null,
+        pending: true,
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request',
+    schema: {
+      example: {
+        statusCode: 400,
+        message: ['command must be one of: on, off, toggle'],
+        error: 'Bad Request',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Device not found',
+    schema: {
+      example: {
+        statusCode: 404,
+        message: 'Device with ID uuid-device-1 not found',
+        error: 'Not Found',
+      },
+    },
+  })
+  async control(
+    @Param('id') id: string,
+    @Body() controlDeviceDto: ControlDeviceDto,
+  ) {
+    return this.devicesService.control(id, controlDeviceDto);
+  }
+
   @Put(':id')
-  @ApiOperation({ summary: 'Update device' })
+  @ApiOperation({
+    summary: 'Update device',
+    description:
+      'Atualiza campos do dispositivo. `powerRating`, `intensity` e `temperature` são mesclados ' +
+      'em `metadata`. `lastSeen` é aceito por compatibilidade mas ignorado — o heartbeat só é ' +
+      'escrito pelo caminho MQTT.',
+  })
   @ApiParam({ name: 'id', description: 'Device UUID' })
   @ApiResponse({ status: 200, description: 'Device updated successfully' })
   @ApiResponse({ status: 404, description: 'Device not found' })
@@ -217,7 +332,9 @@ export class DevicesController {
   @Put(':id/status')
   @ApiOperation({ 
     summary: 'Update device status',
-    description: 'Atualiza o status operacional do dispositivo (ON, OFF, STANDBY, ERROR)'
+    description:
+      'Atualiza o status operacional do dispositivo (ON, OFF, STANDBY, ERROR), publica o comando ' +
+      'em `{mqttTopic}/command` e emite `device:status` no WebSocket. Não altera `lastSeen`.'
   })
   @ApiParam({ name: 'id', description: 'Device UUID' })
   @ApiResponse({ 
@@ -251,11 +368,26 @@ export class DevicesController {
   }
 
   @Put(':id/online')
-  @ApiOperation({ summary: 'Update device online status' })
+  @ApiOperation({
+    summary: 'Update device online status',
+    description:
+      'Define a alcançabilidade do dispositivo (rota administrativa/override). ' +
+      '`online` é independente de `status`: um device pode estar ON e offline. ' +
+      'No uso normal este campo é escrito pelo caminho MQTT.',
+  })
   @ApiParam({ name: 'id', description: 'Device UUID' })
   @ApiResponse({
     status: 200,
     description: 'Online status updated successfully',
+    schema: {
+      example: {
+        id: 'uuid-device-1',
+        name: 'Ar Condicionado A101',
+        status: 'OFF',
+        online: false,
+        lastSeen: null,
+      },
+    },
   })
   async updateOnlineStatus(
     @Param('id') id: string,
