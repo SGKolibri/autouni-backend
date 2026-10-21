@@ -19,6 +19,7 @@ import { FloorsModule } from './modules/floors/floors.module';
 import { RoomsModule } from './modules/rooms/rooms.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ReportsModule } from './modules/reports/reports.module';
+import { PushModule } from './modules/push/push.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { ReportsModule } from './modules/reports/reports.module';
     AutomationsModule,
     NotificationsModule,
     ReportsModule,
+    PushModule,
   ],
   controllers: [AppController],
   providers: [AppService, PrismaService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

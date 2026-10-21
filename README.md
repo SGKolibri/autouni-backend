@@ -116,11 +116,11 @@ O **AutoUni Backend** é uma API REST e WebSocket robusta e escalável para gere
 ### Real-time (WebSocket)
 - ✅ Gateway Socket.io
 - ✅ Eventos:
-  - `device.status` - Status de dispositivo alterado
-  - `device.online` - Dispositivo online/offline
-  - `energy.reading` - Nova leitura energética
-  - `mqtt.raw` - Mensagens MQTT brutas
-- ✅ Autenticação via JWT token
+  - `device:status` - Status de dispositivo alterado (MQTT ou rotas de controle)
+  - `device:online` - Dispositivo alcançável/inalcançável
+  - `energy:update` - Nova leitura energética
+  - `mqtt:raw` - Mensagens MQTT sem dispositivo cadastrado
+- ✅ Autenticação via JWT token no handshake (`auth: { token }`, `query` também aceito)
 - ✅ Rooms por usuário/prédio/sala
 
 ### MQTT Integration
@@ -491,11 +491,13 @@ GET    /api/rooms/:id           # Detalhes + dispositivos
 
 #### Dispositivos
 ```
-GET    /api/devices             # Listar dispositivos
+GET    /api/devices             # Listar dispositivos (?status=ON&type=AC)
 POST   /api/devices             # Criar dispositivo
 PUT    /api/devices/:id         # Atualizar
-POST   /api/devices/:id/control # Controlar (on/off)
-POST   /api/devices/bulk-control # Controle em massa
+PUT    /api/devices/:id/status  # Definir status (publica no MQTT)
+PUT    /api/devices/:id/online  # Definir alcançabilidade (override)
+POST   /api/devices/:id/control # Controlar ({ command: on|off|toggle })
+POST   /api/devices/bulk-control # Controle em massa ({ deviceIds, command })
 ```
 
 #### Energia

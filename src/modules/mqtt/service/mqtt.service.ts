@@ -119,7 +119,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy, IMqttService 
       
       if (!device) {
         this.logger.warn(`No device found for topic ${topic}`);
-        this.realtime.server?.emit('mqtt.raw', { topic, payload: parsed });
+        this.realtime.server?.emit('mqtt:raw', { topic, payload: parsed });
         return;
       }
 
@@ -142,7 +142,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy, IMqttService 
       }
 
       // Fallback: emit raw MQTT message
-      this.realtime.server?.emit('mqtt.raw', { topic, payload: parsed, deviceId: device.id });
+      this.realtime.server?.emit('mqtt:raw', { topic, payload: parsed, deviceId: device.id });
     } catch (err) {
       this.logger.error('Error handling MQTT message', err);
     }
@@ -153,7 +153,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy, IMqttService 
     
     const updatedDevice = await this.mqttRepository.updateDeviceStatus(deviceId, status);
     
-    this.realtime.server?.emit('device.status', {
+    this.realtime.server?.emit('device:status', {
       deviceId: updatedDevice.id,
       status: updatedDevice.status,
       timestamp: new Date(),
@@ -167,9 +167,9 @@ export class MqttService implements OnModuleInit, OnModuleDestroy, IMqttService 
     
     const updatedDevice = await this.mqttRepository.updateDeviceOnlineStatus(deviceId, online);
     
-    this.realtime.server?.emit('device.online', {
+    this.realtime.server?.emit('device:online', {
       deviceId: updatedDevice.id,
-      online,
+      online: updatedDevice.online,
       timestamp: new Date(),
     });
 
@@ -188,10 +188,18 @@ export class MqttService implements OnModuleInit, OnModuleDestroy, IMqttService 
       current: current ? Number(current) : null,
     });
 
-    this.realtime.server?.emit('energy.reading', {
+    this.realtime.server?.emit('energy:update', {
       deviceId,
+      // `power` e `energy` derivam do mesmo valueWh: o schema define o campo como
+      // "Wh (or watts at moment depending source)", então o que o device manda é
+      // a leitura instantânea. Ambos os nomes são expostos porque o frontend lê
+      // os dois; se a distinção virar real, `energy` passa a ser o acumulado.
+      power: reading.valueWh,
+      energy: reading.valueWh,
+      voltage: reading.voltage,
+      current: reading.current,
       reading,
-      timestamp: new Date(),
+      timestamp: reading.timestamp,
     });
 
     this.logger.debug(`Energy reading created for device ${deviceId}: ${valueWh}Wh`);

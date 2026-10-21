@@ -643,6 +643,10 @@ LEGENDA:
 
 7.2 GET /devices
     [A] Listar todos os dispositivos
+    Query params (opcionais, combináveis; sem nenhum retorna todos):
+    - status: ON | OFF | STANDBY | ERROR
+    - type:   LIGHT | AC | PROJECTOR | SPEAKER | LOCK | SENSOR | OTHER
+    Ex.: GET /devices?status=ON&type=AC
     Retorno (200):
     [
       {
@@ -652,12 +656,24 @@ LEGENDA:
         "type": "LIGHT",
         "status": "ON",
         "online": true,
-        "lastSeen": "2025-01-11T10:30:00.000Z"
+        "lastSeen": "2026-09-03T03:01:04.882Z"
       }
     ]
+    Erros:
+    - 400: valor fora do enum (não é ignorado silenciosamente)
+
+    NOTA — status x online:
+      status  = estado lógico do aparelho (ON/OFF/STANDBY/ERROR)
+      online  = o aparelho é alcançável (falou com o broker MQTT)
+      São independentes: um device pode estar ON e offline.
+      `online` e `lastSeen` só são escritos pelo caminho MQTT (exceto o
+      override administrativo PUT /devices/:id/online). Escrita via HTTP
+      nunca carimba `lastSeen`.
 
 7.3 GET /devices/stats
     [A] Obter estatísticas de dispositivos
+    online/offline são contados pela coluna `online`, não por uma janela
+    de tempo sobre lastSeen.
     Retorno (200):
     {
       "total": 150,
@@ -727,13 +743,17 @@ LEGENDA:
 
 7.7 PUT /devices/:id
     [A] Atualizar dispositivo
+    Colunas aceitas: roomId, name, type, status, mqttTopic, online, metadata.
+    Atributos que NÃO são colunas são mesclados dentro de metadata
+    (merge raso, preserva as chaves existentes):
+      powerRating, intensity, temperature
+    "room" (rótulo textual) e "lastSeen" são aceitos por compatibilidade com
+    o Partial<Device> do frontend, porém ignorados: o heartbeat só é escrito
+    pelo caminho MQTT.
     Body:
     {
       "name": "Luz Principal Renovada",
-      "metadata": {
-        "brand": "Philips",
-        "model": "LED Smart Pro"
-      }
+      "intensity": 50
     }
     Retorno (200):
     {
@@ -741,15 +761,19 @@ LEGENDA:
       "name": "Luz Principal Renovada",
       "metadata": {
         "brand": "Philips",
-        "model": "LED Smart Pro"
+        "power": "20W",
+        "intensity": 50
       },
-      "updatedAt": "2025-01-11T11:00:00.000Z"
+      "lastSeen": null,
+      "updatedAt": "2026-09-03T02:58:36.570Z"
     }
     Erros:
     - 404: Dispositivo não encontrado
 
 7.8 PUT /devices/:id/status
     [A] Atualizar status do dispositivo
+    Publica em {mqttTopic}/command e emite device:status no WebSocket.
+    Não altera lastSeen.
     Body:
     {
       "status": "ON"
@@ -759,11 +783,15 @@ LEGENDA:
       "id": "uuid-device-1",
       "name": "Luz Principal",
       "status": "ON",
-      "updatedAt": "2025-01-11T11:00:00.000Z"
+      "online": false,
+      "lastSeen": null,
+      "updatedAt": "2026-09-03T03:01:03.046Z"
     }
 
 7.9 PUT /devices/:id/online
-    [A] Atualizar status online do dispositivo
+    [A] Definir alcançabilidade do dispositivo (override administrativo)
+    Persiste o booleano de verdade. No uso normal este campo é escrito
+    pelo caminho MQTT. Emite device:online no WebSocket.
     Body:
     {
       "online": true
@@ -772,11 +800,65 @@ LEGENDA:
     {
       "id": "uuid-device-1",
       "name": "Luz Principal",
+      "status": "OFF",
       "online": true,
-      "lastSeen": "2025-01-11T11:00:00.000Z"
+      "lastSeen": null
     }
 
-7.10 DELETE /devices/:id
+7.10 POST /devices/:id/control
+     [A] Executar um comando no dispositivo
+     Body:
+     {
+       "command": "toggle",        // obrigatório: on | off | toggle
+       "temperature": 22,          // opcional, repassado no payload MQTT
+       "intensity": 75             // opcional, repassado no payload MQTT
+     }
+     Fluxo:
+       1. resolve o status alvo (toggle usa o status atual NO BANCO;
+          qualquer estado != ON vira ON, inclusive STANDBY e ERROR)
+       2. publica {mqttTopic}/command  ->  {"state":"ON"}
+       3. grava o status alvo otimisticamente
+       4. emite device:status no WebSocket
+     Retorno (200):
+     {
+       "id": "e497d85a-b9c7-4c7f-9e9c-0aecb6e2a025",
+       "name": "Ar Condicionado A101",
+       "type": "AC",
+       "status": "ON",
+       "online": false,
+       "mqttTopic": "devices/ac-a101",
+       "lastSeen": null,
+       "pending": true
+     }
+     pending = comando entregue ao broker, aguardando confirmação do
+     hardware. Vem false se o device não tem mqttTopic ou se o backend
+     está desconectado do broker.
+     Body aceita ainda "value" (DeviceStatus) por compatibilidade, mas é
+     apenas hint: "command" sempre vence.
+     Erros:
+     - 400: command fora de on|off|toggle
+     - 404: Dispositivo não encontrado
+
+7.11 POST /devices/bulk-control
+     [A] Aplicar o mesmo comando a vários dispositivos
+     Body:
+     {
+       "deviceIds": ["uuid-device-1", "uuid-device-2"],
+       "command": "off"
+     }
+     Retorno (200):
+     {
+       "message": "Command 'off' applied to 3 of 4 device(s)",
+       "successCount": 3,
+       "failedCount": 1,
+       "failedDevices": ["uuid-device-4"]
+     }
+     Falhas individuais não abortam o lote; a rota responde 200 mesmo com
+     falha parcial — confira failedCount.
+     Erros:
+     - 400: deviceIds vazio / não-UUID, ou command inválido
+
+7.12 DELETE /devices/:id
      [A] Deletar dispositivo
      Retorno (204): No Content
      Erros:
@@ -1493,11 +1575,24 @@ ReportStatus:
 
 3. WEBSOCKET:
    - Conexão: ws://localhost:3000 ou wss://autouni-api.onrender.com
-   - Eventos em tempo real:
-     * device.status: Mudança de status de dispositivo
-     * device.online: Status de conexão de dispositivo
-     * energy.reading: Nova leitura de energia
-     * mqtt.raw: Mensagem MQTT bruta
+   - Autenticação no handshake (socket.io v4):
+       io(URL, { auth: { token } })     <- forma recomendada
+       io(URL, { query: { token } })    <- também aceita (clientes antigos)
+     Sem token, o servidor derruba a conexão logo após o handshake.
+   - Eventos em tempo real (nomes com DOIS-PONTOS; a convenção antiga com
+     ponto — device.status, energy.reading, mqtt.raw — não é mais emitida):
+     * device:status  { deviceId, status, timestamp }
+         Emitido pelo caminho MQTT e também pelas rotas HTTP de controle
+         (POST /devices/:id/control, POST /devices/bulk-control,
+          PUT /devices/:id/status).
+     * device:online  { deviceId, online, timestamp }
+     * energy:update  { deviceId, power, energy, voltage, current,
+                        reading, timestamp }
+         power e energy carregam o mesmo valueWh (leitura instantânea);
+         o registro completo vai em `reading`.
+     * mqtt:raw       { topic, payload }
+         Tópico sem device cadastrado. Quando o device é conhecido mas o
+         sufixo não é tratado, inclui também deviceId.
 
 4. PAGINAÇÃO:
    - Algumas rotas suportam query params: ?limit=100&offset=0
