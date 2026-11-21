@@ -61,7 +61,8 @@ LEGENDA:
     - 401: Credenciais inválidas
 
 2.2 POST /auth/register
-    [P] Registra um novo usuário
+    [ADMIN] Cadastra um usuário VIEWER na organização do ADMIN autenticado.
+    O campo role não é aceito (400); para promover, use PUT /users/:id.
     Body:
     {
       "email": "novo@example.com",
@@ -873,7 +874,7 @@ LEGENDA:
     Body:
     {
       "deviceId": "uuid-device-1",
-      "valueWh": 150.5,
+      "energyWh": 150.5,
       "voltage": 220,
       "current": 0.68
     }
@@ -881,7 +882,7 @@ LEGENDA:
     {
       "id": "uuid-reading-1",
       "deviceId": "uuid-device-1",
-      "valueWh": 150.5,
+      "energyWh": 150.5,
       "voltage": 220,
       "current": 0.68,
       "timestamp": "2025-01-11T10:00:00.000Z",
@@ -896,7 +897,7 @@ LEGENDA:
       {
         "id": "uuid-reading-1",
         "deviceId": "uuid-device-1",
-        "valueWh": 150.5,
+        "energyWh": 150.5,
         "voltage": 220,
         "current": 0.68,
         "timestamp": "2025-01-11T10:00:00.000Z"
@@ -931,7 +932,7 @@ LEGENDA:
           "name": "Luz Principal",
           "type": "LIGHT"
         },
-        "valueWh": 150.5,
+        "energyWh": 150.5,
         "timestamp": "2025-01-11T10:00:00.000Z"
       }
     ]
@@ -1588,9 +1589,13 @@ ReportStatus:
      * device:online  { deviceId, online, timestamp }
      * energy:update  { deviceId, power, energy, voltage, current,
                         reading, timestamp }
-         power e energy carregam o mesmo valueWh (leitura instantânea);
-         o registro completo vai em `reading`.
-     * mqtt:raw       { topic, payload }
+         power = potência instantânea (W); energy = energia do intervalo (Wh);
+         o registro completo vai em `reading`. Eventos vão só para a sala
+         da organização do usuário.
+     * sensor:update  { deviceId, roomId, kind, value, unit, raw, timestamp }
+     * sensor:alarm   { state, alarm, deviceId, roomId }
+     * room:occupancy { roomId, occupied, timestamp }
+     * node:online    { nodeId, online, timestamp }
          Tópico sem device cadastrado. Quando o device é conhecido mas o
          sufixo não é tratado, inclui também deviceId.
 

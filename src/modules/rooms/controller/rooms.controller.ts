@@ -22,6 +22,8 @@ import { RoomsService } from '../service/rooms.service';
 import { CreateRoomDto } from '../dto/create-room.dto';
 import { UpdateRoomDto } from '../dto/update-room.dto';
 import { AuthGuard } from '../../../guards/auth.guard';
+import { RolesGuard } from '../../../common/auth/roles.guard';
+import { MANAGERS, Roles } from '../../../common/auth/roles';
 
 const ROOM_EXAMPLE = {
   id: 'uuid-room-1',
@@ -54,12 +56,13 @@ const BAD_REQUEST_EXAMPLE = {
 
 @ApiTags('Rooms')
 @ApiBearerAuth('JWT-auth')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, RolesGuard)
 @Controller('rooms')
 export class RoomsController {
   constructor(private readonly roomsService: RoomsService) {}
 
   @Post()
+  @Roles(...MANAGERS)
   @ApiOperation({ summary: 'Criar nova sala' })
   @ApiResponse({
     status: 201,
@@ -145,6 +148,7 @@ export class RoomsController {
   }
 
   @Put(':id')
+  @Roles(...MANAGERS)
   @ApiOperation({ summary: 'Atualizar sala' })
   @ApiParam({ name: 'id', description: 'ID da sala (UUID)', type: String })
   @ApiResponse({
@@ -165,6 +169,7 @@ export class RoomsController {
   }
 
   @Delete(':id')
+  @Roles(...MANAGERS)
   @ApiOperation({ summary: 'Deletar sala' })
   @ApiParam({ name: 'id', description: 'ID da sala (UUID)', type: String })
   @ApiResponse({

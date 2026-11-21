@@ -1,6 +1,5 @@
 import {
   IsEmail,
-  IsEnum,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -8,8 +7,9 @@ import {
   MinLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { UserRole } from '@prisma/client';
 
+// Sem `role`: o cadastro cria sempre um VIEWER na organização do ADMIN que o
+// chamou. Com `forbidNonWhitelisted`, enviar `role` aqui é rejeitado com 400.
 export class RegisterDto {
   @ApiProperty({ example: 'João da Silva' })
   @IsNotEmpty()
@@ -39,11 +39,6 @@ export class RegisterDto {
     message: 'cpf deve ter 11 dígitos numéricos sem pontos',
   })
   cpf?: string;
-
-  @ApiPropertyOptional({ enum: UserRole, default: UserRole.VIEWER })
-  @IsOptional()
-  @IsEnum(UserRole)
-  role?: UserRole;
 
   @ApiPropertyOptional({ example: 'http://example.com/avatar.jpg' })
   @IsOptional()

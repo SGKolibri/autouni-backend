@@ -6,6 +6,7 @@ import {
   CreateFloorData,
   UpdateFloorData,
 } from '../interfaces/floors.interface';
+import { withTenant } from '../../../common/tenant/tenant-context';
 
 @Injectable()
 export class FloorsRepository implements IFloorsRepository {
@@ -13,7 +14,7 @@ export class FloorsRepository implements IFloorsRepository {
 
   async create(data: CreateFloorData): Promise<Floor> {
     return this.prisma.floor.create({
-      data,
+      data: withTenant(data),
     });
   }
 

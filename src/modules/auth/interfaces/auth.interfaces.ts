@@ -15,9 +15,17 @@ export interface JwtPayload {
   sub: string;
   role: UserRole;
   name: string;
+  // Organização (tenant) do usuário. Todo acesso a dados é restrito a ela.
+  orgId: string;
+  // Refresh tokens não servem como access token.
+  typ: 'access' | 'refresh';
 }
 
+export type UserWithOrganization = User & { organization: { id: string; slug: string; name: string } };
+
 export interface IAuthRepository {
+  findUsersByEmailForLogin(email: string, organizationSlug?: string): Promise<UserWithOrganization[]>;
+  findUserForRefresh(userId: string, organizationId: string): Promise<User | null>;
   findUserByEmail(email: string): Promise<User | null>;
   findUserByCpf(cpf: string): Promise<User | null>;
   createUser(data: {
@@ -26,7 +34,6 @@ export interface IAuthRepository {
     password: string;
     phone?: string;
     cpf?: string;
-    role?: UserRole;
     avatar?: string;
   }): Promise<User>;
   createRefreshToken(data: {

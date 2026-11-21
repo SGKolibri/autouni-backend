@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { UserService } from './user.service';
 import { PrismaUserRepository } from '../repository/prisma-user.repository';
 
@@ -42,6 +42,7 @@ describe('UserService', () => {
             create: jest.fn(),
             update: jest.fn(),
             delete: jest.fn(),
+            countAdmins: jest.fn().mockResolvedValue(2),
           },
         },
       ],
@@ -67,14 +68,18 @@ describe('UserService', () => {
       expect(userRepo.create).toHaveBeenCalled();
     });
 
-    it('should throw BadRequestException when email already exists', async () => {
+    it('should throw ConflictException when email already exists in the organization', async () => {
       userRepo.findByEmail.mockResolvedValue(mockUser as any);
-      await expect(service.create({ name: 'Joao', email: 'joao@email.com' } as any)).rejects.toThrow(BadRequestException);
+      await expect(service.create({ name: 'Joao', email: 'joao@email.com', password: 'secret1' } as any)).rejects.toThrow(ConflictException);
       expect(userRepo.create).not.toHaveBeenCalled();
     });
 
-    it('should throw BadRequestException when ADMIN role without password', async () => {
-      await expect(service.create({ name: 'Admin', email: 'admin@email.com', role: 'ADMIN' } as any)).rejects.toThrow(BadRequestException);
+    it('should throw ConflictException when CPF already exists in the organization', async () => {
+      userRepo.findByEmail.mockResolvedValue(null);
+      userRepo.findByCpf.mockResolvedValue(mockUser as any);
+      await expect(
+        service.create({ name: 'Joao', email: 'novo@email.com', password: 'secret1', cpf: '12345678901' } as any),
+      ).rejects.toThrow(ConflictException);
     });
 
     it('should hash password when provided', async () => {
@@ -141,13 +146,28 @@ describe('UserService', () => {
       await expect(service.update('non-existent', {} as any)).rejects.toThrow(NotFoundException);
     });
 
-    it('should throw BadRequestException when upgrading to ADMIN without password', async () => {
-      const userNoPassword = { ...mockUser, password: null };
-      userRepo.findById.mockResolvedValue(userNoPassword as any);
-      await expect(service.update('user-uuid-1', { role: 'ADMIN' } as any)).rejects.toThrow(BadRequestException);
+    it('should forbid a non-admin from changing a role, even their own', async () => {
+      await expect(
+        service.update('user-uuid-1', { role: 'ADMIN' } as any, { sub: 'user-uuid-1', role: 'VIEWER' }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(userRepo.update).not.toHaveBeenCalled();
     });
 
-    it('should allow upgrading to ADMIN when user already has password', async () => {
+    it('should forbid a non-admin from editing another user', async () => {
+      await expect(
+        service.update('admin-uuid-1', { name: 'x' } as any, { sub: 'user-uuid-1', role: 'TECHNICIAN' }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should refuse to demote the last ADMIN', async () => {
+      userRepo.findById.mockResolvedValue(mockAdminUser as any);
+      userRepo.countAdmins.mockResolvedValue(1);
+      await expect(
+        service.update('admin-uuid-1', { role: 'VIEWER' } as any, { sub: 'admin-uuid-1', role: 'ADMIN' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should let an ADMIN promote another user', async () => {
       userRepo.findById.mockResolvedValue(mockUser as any);
       userRepo.update.mockResolvedValue({ ...mockUser, role: 'ADMIN' } as any);
       const result = await service.update('user-uuid-1', { role: 'ADMIN' } as any);

@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsNumber, IsOptional, IsDateString, Min, IsPositive, IsIn } from 'class-validator';
+import { IsString, IsNotEmpty, IsNumber, IsOptional, IsDateString, Min, Max, IsIn, IsDate } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateEnergyReadingDto {
@@ -8,10 +8,29 @@ export class CreateEnergyReadingDto {
   @IsNotEmpty()
   deviceId: string;
 
-  @ApiProperty({ description: 'Energy value in Watt-hours (Wh)', example: 150.5 })
+  @ApiPropertyOptional({
+    description: 'Energia consumida no intervalo desde a leitura anterior (Wh). É o valor somado nas estatísticas.',
+    example: 2.5,
+  })
+  @IsOptional()
   @IsNumber()
-  @IsPositive()
-  valueWh: number;
+  @Min(0)
+  energyWh?: number;
+
+  @ApiPropertyOptional({
+    description: 'Contador acumulado do medidor (Wh). Sem energyWh, o intervalo é a diferença para a leitura anterior.',
+    example: 123456.7,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  energyTotalWh?: number;
+
+  @ApiPropertyOptional({ description: 'Potência instantânea (W)', example: 150 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  powerW?: number;
 
   @ApiPropertyOptional({ description: 'Voltage in Volts (V)', example: 220 })
   @IsOptional()
@@ -24,6 +43,25 @@ export class CreateEnergyReadingDto {
   @IsNumber()
   @Min(0)
   current?: number;
+
+  @ApiPropertyOptional({ description: 'Frequência da rede (Hz)', example: 60 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  frequency?: number;
+
+  @ApiPropertyOptional({ description: 'Fator de potência (0-1)', example: 0.92 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  powerFactor?: number;
+
+  @ApiPropertyOptional({ description: 'Momento da medição (backfill). Padrão: agora.', example: '2026-11-17T12:00:00Z' })
+  @IsOptional()
+  @Type(() => Date)
+  @IsDate()
+  timestamp?: Date;
 }
 
 export class EnergyQueryDto {

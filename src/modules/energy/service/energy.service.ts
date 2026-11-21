@@ -1,5 +1,5 @@
-import { Injectable } from '@nestjs/common';
-import { EnergyReading } from '@prisma/client';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { Device, EnergyReading } from '@prisma/client';
 import { EnergyRepository } from '../repository/energy.repository';
 import {
   EnergyAggregation,
@@ -7,7 +7,14 @@ import {
   ComparisonLevel,
   ScopeLevel,
   EnergyConsumptionSnapshot,
+  EnergyReadingInput,
 } from '../interfaces/energy.interface';
+import {
+  computeIntervalEnergyWh,
+  InvalidPayloadError,
+  parseEnergyPayload,
+} from '../../telemetry/payload-parsing';
+import { channelAccepts } from '../../telemetry/channel-capabilities';
 import {
   summarizeDevicesConsumption,
   DeviceConsumptionLike,
@@ -21,13 +28,32 @@ import {
 export class EnergyService {
   constructor(private readonly energyRepository: EnergyRepository) {}
 
-  async createReading(data: {
-    deviceId: string;
-    valueWh: number;
-    voltage?: number | null;
-    current?: number | null;
-  }): Promise<EnergyReading> {
-    return this.energyRepository.createReading(data);
+  /**
+   * Leitura manual (POST /energy/readings). Com `energyWh` grava o intervalo
+   * informado; só com `energyTotalWh`/`powerW` deriva o intervalo da leitura
+   * anterior, exatamente como na ingestão MQTT.
+   */
+  async createReading(data: Omit<EnergyReadingInput, 'energyWh'> & { energyWh?: number | null }): Promise<EnergyReading> {
+    try {
+      const measurement = parseEnergyPayload(data);
+      const previous = await this.energyRepository.findLastReading(data.deviceId);
+      const energyWh = computeIntervalEnergyWh(measurement, previous, data.timestamp ?? new Date());
+      return await this.energyRepository.createReading({ ...measurement, deviceId: data.deviceId, energyWh, timestamp: data.timestamp });
+    } catch (err) {
+      if (err instanceof InvalidPayloadError) throw new BadRequestException(err.message);
+      throw err;
+    }
+  }
+
+  /** Ingestão de `devices/<id>/energy`. Lança InvalidPayloadError se o payload não servir. */
+  async ingestMeasurement(device: Pick<Device, 'id' | 'channel'>, payload: unknown, now = new Date()): Promise<EnergyReading> {
+    if (!channelAccepts(device.channel, 'ENERGY')) {
+      throw new InvalidPayloadError(`canal ${device.channel} não produz leitura de energia`);
+    }
+    const measurement = parseEnergyPayload(payload);
+    const previous = await this.energyRepository.findLastReading(device.id);
+    const energyWh = computeIntervalEnergyWh(measurement, previous, now);
+    return this.energyRepository.createReading({ ...measurement, deviceId: device.id, energyWh, timestamp: now });
   }
 
   async getDeviceReadings(

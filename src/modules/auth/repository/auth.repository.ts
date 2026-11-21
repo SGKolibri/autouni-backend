@@ -1,22 +1,45 @@
 import { Injectable } from '@nestjs/common';
 import { User, UserRole } from '@prisma/client';
 import { PrismaService } from '../../../../prisma/prisma.service';
-import { IAuthRepository } from '../interfaces/auth.interfaces';
+import { IAuthRepository, UserWithOrganization } from '../interfaces/auth.interfaces';
+import { TenantContext, withTenant } from '../../../common/tenant/tenant-context';
 
 @Injectable()
 export class AuthRepository implements IAuthRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  // Login acontece antes de existir tenant: busca em todas as organizações e o
+  // serviço decide. É o único ponto que lê `password`.
+  async findUsersByEmailForLogin(
+    email: string,
+    organizationSlug?: string,
+  ): Promise<UserWithOrganization[]> {
+    return TenantContext.runAsSystem(() =>
+      this.prisma.user.findMany({
+        where: {
+          email,
+          ...(organizationSlug ? { organization: { slug: organizationSlug } } : {}),
+        },
+        omit: { password: false },
+        include: { organization: { select: { id: true, slug: true, name: true } } },
+      }),
+    ) as Promise<UserWithOrganization[]>;
+  }
+
+  async findUserForRefresh(userId: string, organizationId: string): Promise<User | null> {
+    return TenantContext.runAsTenant(organizationId, () =>
+      this.prisma.user.findUnique({ where: { id: userId } }),
+    );
+  }
+
+  // As buscas abaixo rodam dentro da requisição autenticada: o escopo de tenant
+  // restringe à organização de quem está cadastrando.
   async findUserByEmail(email: string): Promise<User | null> {
-    return this.prisma.user.findUnique({
-      where: { email },
-    });
+    return this.prisma.user.findFirst({ where: { email } });
   }
 
   async findUserByCpf(cpf: string): Promise<User | null> {
-    return this.prisma.user.findUnique({
-      where: { cpf },
-    });
+    return this.prisma.user.findFirst({ where: { cpf } });
   }
 
   async createUser(data: {
@@ -25,17 +48,15 @@ export class AuthRepository implements IAuthRepository {
     password: string;
     phone?: string;
     cpf?: string;
-    role?: UserRole;
     avatar?: string;
   }): Promise<User> {
+    // Cadastro nunca escolhe papel: nasce VIEWER e só um ADMIN promove via /users.
     return this.prisma.user.create({
-      data: {
-        ...data,
-        role: data.role || UserRole.VIEWER,
-      },
+      data: withTenant({ ...data, role: UserRole.VIEWER }),
     });
   }
 
+  // RefreshToken não tem tenant próprio; pertence ao usuário.
   async createRefreshToken(data: {
     userId: string;
     tokenHash: string;

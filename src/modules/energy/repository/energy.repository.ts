@@ -8,25 +8,50 @@ import {
   EnergyHistoryBucket,
   EnergyComparisonItem,
   ComparisonLevel,
+  EnergyReadingInput,
 } from '../interfaces/energy.interface';
+import { PreviousEnergyReading } from '../../telemetry/payload-parsing';
+import { TenantContext, withTenant } from '../../../common/tenant/tenant-context';
+
+type AggregateResult = {
+  _sum?: { energyWh: number | null } | null;
+  _count: number;
+  _avg?: { energyWh: number | null; powerW: number | null } | null;
+  _max?: { energyWh: number | null; powerW: number | null } | null;
+  _min?: { energyWh: number | null } | null;
+};
+
+// avg/max/min Wh são por leitura (energia de cada intervalo); potência média e
+// de pico vêm de `powerW`, que nunca é somado.
+function toAggregation(result: AggregateResult): EnergyAggregation {
+  return {
+    totalKwh: (result._sum?.energyWh ?? 0) / 1000,
+    count: result._count,
+    avgWh: result._avg?.energyWh ?? undefined,
+    maxWh: result._max?.energyWh ?? undefined,
+    minWh: result._min?.energyWh ?? undefined,
+    avgPowerW: result._avg?.powerW ?? undefined,
+    maxPowerW: result._max?.powerW ?? undefined,
+  };
+}
 
 @Injectable()
 export class EnergyRepository implements IEnergyRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async createReading(data: {
-    deviceId: string;
-    valueWh: number;
-    voltage?: number | null;
-    current?: number | null;
-  }): Promise<EnergyReading> {
+  async createReading(data: EnergyReadingInput): Promise<EnergyReading> {
     return this.prisma.energyReading.create({
-      data: {
+      data: withTenant({
         deviceId: data.deviceId,
-        valueWh: data.valueWh,
-        voltage: data.voltage,
-        current: data.current,
-      },
+        energyWh: data.energyWh,
+        energyTotalWh: data.energyTotalWh ?? null,
+        powerW: data.powerW ?? null,
+        voltage: data.voltage ?? null,
+        current: data.current ?? null,
+        frequency: data.frequency ?? null,
+        powerFactor: data.powerFactor ?? null,
+        ...(data.timestamp ? { timestamp: data.timestamp } : {}),
+      }),
       include: {
         device: {
           include: {
@@ -34,6 +59,14 @@ export class EnergyRepository implements IEnergyRepository {
           },
         },
       },
+    });
+  }
+
+  async findLastReading(deviceId: string): Promise<PreviousEnergyReading | null> {
+    return this.prisma.energyReading.findFirst({
+      where: { deviceId },
+      orderBy: { timestamp: 'desc' },
+      select: { energyTotalWh: true, powerW: true, timestamp: true },
     });
   }
 
@@ -103,20 +136,14 @@ export class EnergyRepository implements IEnergyRepository {
 
     const result = await this.prisma.energyReading.aggregate({
       where,
-      _sum: { valueWh: true },
+      _sum: { energyWh: true },
       _count: true,
-      _avg: { valueWh: true },
-      _max: { valueWh: true },
-      _min: { valueWh: true },
+      _avg: { energyWh: true, powerW: true },
+      _max: { energyWh: true, powerW: true },
+      _min: { energyWh: true },
     });
 
-    return {
-      totalKwh: (result._sum?.valueWh ?? 0) / 1000,
-      count: result._count,
-      avgWh: result._avg?.valueWh ?? undefined,
-      maxWh: result._max?.valueWh ?? undefined,
-      minWh: result._min?.valueWh ?? undefined,
-    };
+    return toAggregation(result);
   }
 
   async aggregateByRoom(
@@ -143,20 +170,14 @@ export class EnergyRepository implements IEnergyRepository {
 
     const result = await this.prisma.energyReading.aggregate({
       where,
-      _sum: { valueWh: true },
+      _sum: { energyWh: true },
       _count: true,
-      _avg: { valueWh: true },
-      _max: { valueWh: true },
-      _min: { valueWh: true },
+      _avg: { energyWh: true, powerW: true },
+      _max: { energyWh: true, powerW: true },
+      _min: { energyWh: true },
     });
 
-    return {
-      totalKwh: (result._sum?.valueWh ?? 0) / 1000,
-      count: result._count,
-      avgWh: result._avg?.valueWh ?? undefined,
-      maxWh: result._max?.valueWh ?? undefined,
-      minWh: result._min?.valueWh ?? undefined,
-    };
+    return toAggregation(result);
   }
 
   async aggregateByFloor(
@@ -193,20 +214,14 @@ export class EnergyRepository implements IEnergyRepository {
 
     const result = await this.prisma.energyReading.aggregate({
       where,
-      _sum: { valueWh: true },
+      _sum: { energyWh: true },
       _count: true,
-      _avg: { valueWh: true },
-      _max: { valueWh: true },
-      _min: { valueWh: true },
+      _avg: { energyWh: true, powerW: true },
+      _max: { energyWh: true, powerW: true },
+      _min: { energyWh: true },
     });
 
-    return {
-      totalKwh: (result._sum?.valueWh ?? 0) / 1000,
-      count: result._count,
-      avgWh: result._avg?.valueWh ?? undefined,
-      maxWh: result._max?.valueWh ?? undefined,
-      minWh: result._min?.valueWh ?? undefined,
-    };
+    return toAggregation(result);
   }
 
   async aggregateByBuilding(
@@ -253,20 +268,14 @@ export class EnergyRepository implements IEnergyRepository {
 
     const result = await this.prisma.energyReading.aggregate({
       where,
-      _sum: { valueWh: true },
+      _sum: { energyWh: true },
       _count: true,
-      _avg: { valueWh: true },
-      _max: { valueWh: true },
-      _min: { valueWh: true },
+      _avg: { energyWh: true, powerW: true },
+      _max: { energyWh: true, powerW: true },
+      _min: { energyWh: true },
     });
 
-    return {
-      totalKwh: (result._sum?.valueWh ?? 0) / 1000,
-      count: result._count,
-      avgWh: result._avg?.valueWh ?? undefined,
-      maxWh: result._max?.valueWh ?? undefined,
-      minWh: result._min?.valueWh ?? undefined,
-    };
+    return toAggregation(result);
   }
 
   async findDevicesForConsumption(): Promise<Array<{ status?: string | null; metadata?: unknown }>> {
@@ -289,20 +298,14 @@ export class EnergyRepository implements IEnergyRepository {
 
     const result = await this.prisma.energyReading.aggregate({
       where,
-      _sum: { valueWh: true },
+      _sum: { energyWh: true },
       _count: true,
-      _avg: { valueWh: true },
-      _max: { valueWh: true },
-      _min: { valueWh: true },
+      _avg: { energyWh: true, powerW: true },
+      _max: { energyWh: true, powerW: true },
+      _min: { energyWh: true },
     });
 
-    return {
-      totalKwh: (result._sum?.valueWh ?? 0) / 1000,
-      count: result._count,
-      avgWh: result._avg?.valueWh ?? undefined,
-      maxWh: result._max?.valueWh ?? undefined,
-      minWh: result._min?.valueWh ?? undefined,
-    };
+    return toAggregation(result);
   }
 
   async getDeviceIdsForScope(
@@ -360,34 +363,45 @@ export class EnergyRepository implements IEnergyRepository {
     deviceIds?: string[],
   ): Promise<EnergyHistoryBucket[]> {
     type RawRow = { bucket: Date; total_kwh: number; count: bigint };
+    // SQL cru não passa pelo escopo de tenant do PrismaService: o filtro de
+    // organização tem de ser explícito.
+    const organizationId = TenantContext.requireOrganizationId();
     let rows: RawRow[];
 
-    if (deviceIds && deviceIds.length > 0) {
-      const placeholders = deviceIds.map((_, i) => `$${i + 4}`).join(', ');
+    if (deviceIds && deviceIds.length === 0) {
+      // Escopo sem devices (ex.: sala vazia) não tem leituras. Antes caía no
+      // ramo global e devolvia o histórico do sistema inteiro.
+      rows = [];
+    } else if (deviceIds) {
+      const placeholders = deviceIds.map((_, i) => `$${i + 5}`).join(', ');
       rows = await this.prisma.$queryRawUnsafe<RawRow[]>(
         `SELECT DATE_TRUNC($1, timestamp) AS bucket,
-                SUM("valueWh") / 1000.0 AS total_kwh,
+                SUM("energyWh") / 1000.0 AS total_kwh,
                 COUNT(*)::int AS count
          FROM "EnergyReading"
          WHERE timestamp >= $2 AND timestamp <= $3
+           AND "organizationId" = $4
            AND "deviceId"::text IN (${placeholders})
          GROUP BY 1 ORDER BY 1`,
         bucketSize,
         from,
         to,
+        organizationId,
         ...deviceIds,
       );
     } else {
       rows = await this.prisma.$queryRawUnsafe<RawRow[]>(
         `SELECT DATE_TRUNC($1, timestamp) AS bucket,
-                SUM("valueWh") / 1000.0 AS total_kwh,
+                SUM("energyWh") / 1000.0 AS total_kwh,
                 COUNT(*)::int AS count
          FROM "EnergyReading"
          WHERE timestamp >= $2 AND timestamp <= $3
+           AND "organizationId" = $4
          GROUP BY 1 ORDER BY 1`,
         bucketSize,
         from,
         to,
+        organizationId,
       );
     }
 

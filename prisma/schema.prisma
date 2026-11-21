@@ -4,7 +4,6 @@
 // Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
-// ...existing code...
 generator client {
   provider      = "prisma-client-js"
   binaryTargets = ["native", "debian-openssl-3.0.x"]
@@ -48,6 +47,29 @@ enum DeviceStatus {
   ERROR
 }
 
+// Função física do dispositivo dentro de um nó (ESP32). Define quais leituras
+// fazem sentido para ele (ver src/modules/telemetry/channel-capabilities.ts).
+enum DeviceChannel {
+  RELAY
+  DIMMER
+  IR
+  ENERGY_METER
+  GAS_MQ2
+  GAS_MQ135
+  PIR
+}
+
+enum SensorKind {
+  GAS_MQ2
+  GAS_MQ135
+  MOTION
+}
+
+enum AlarmLevel {
+  WARNING
+  CRITICAL
+}
+
 enum TriggerType {
   SCHEDULE
   CONDITION
@@ -81,24 +103,54 @@ enum ReportStatus {
   FAILED
 }
 
-model User {
+// Tenant. Toda entidade de domínio pertence a exatamente uma organização.
+model Organization {
   id        String   @id @default(uuid())
-  email     String   @unique
   name      String
-  password  String
-  phone     String?
-  cpf       String?  @unique
-  role      UserRole @default(VIEWER)
-  avatar    String?
+  slug      String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  users             User[]
+  buildings         Building[]
+  floors            Floor[]
+  rooms             Room[]
+  devices           Device[]
+  energyReadings    EnergyReading[]
+  automations       Automation[]
+  automationHistory AutomationHistory[]
+  notifications     Notification[]
+  reports           Report[]
+  nodes             DeviceNode[]
+  sensorReadings    SensorReading[]
+  sensorThresholds  SensorThreshold[]
+  sensorAlarms      SensorAlarm[]
+}
+
+model User {
+  id             String       @id @default(uuid())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  email          String
+  name           String
+  password       String
+  phone          String?
+  cpf            String?
+  role           UserRole     @default(VIEWER)
+  avatar         String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
   // relations
-  notifications Notification[]
-  reports       Report[]
-  automations   Automation[]   @relation("AutomationCreator")
-  refreshTokens RefreshToken[]
-  pushTokens    PushToken[]
+  notifications      Notification[]
+  reports            Report[]
+  automations        Automation[]   @relation("AutomationCreator")
+  acknowledgedAlarms SensorAlarm[]  @relation("AlarmAcknowledgedBy")
+  refreshTokens      RefreshToken[]
+  pushTokens         PushToken[]
+
+  @@unique([organizationId, email])
+  @@unique([organizationId, cpf])
 }
 
 model RefreshToken {
@@ -131,47 +183,71 @@ model PushToken {
 }
 
 model Building {
-  id            String   @id @default(uuid())
-  name          String
-  description   String?
-  location      String
-  totalEnergy   Float? // kWh aggregated
-  activeDevices Int?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id             String       @id @default(uuid())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  name           String
+  description    String?
+  location       String
+  totalEnergy    Float? // kWh aggregated
+  activeDevices  Int?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   floors Floor[]
+
+  @@index([organizationId])
 }
 
 model Floor {
-  id         String   @id @default(uuid())
-  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
-  buildingId String
-  number     Int
-  name       String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id             String       @id @default(uuid())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  building       Building     @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  buildingId     String
+  number         Int
+  name           String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   rooms Room[]
+
+  @@index([organizationId])
 }
 
 model Room {
-  id        String   @id @default(uuid())
-  floor     Floor    @relation(fields: [floorId], references: [id], onDelete: Cascade)
-  floorId   String
-  name      String
-  type      RoomType @default(OTHER)
+  id             String       @id @default(uuid())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  floor          Floor        @relation(fields: [floorId], references: [id], onDelete: Cascade)
+  floorId        String
+  name           String
+  type           RoomType     @default(OTHER)
+
+  // Presença (PIR). `occupied` liga no primeiro movimento e só desliga depois de
+  // `vacancyTimeoutSec` sem movimento: o HC-SR501 oscila, e um único "sem
+  // movimento" não significa sala vazia.
+  occupied           Boolean   @default(false)
+  lastMotionAt       DateTime?
+  occupancyChangedAt DateTime?
+  vacancyTimeoutSec  Int       @default(600)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   devices Device[]
+  nodes   DeviceNode[]
+
+  @@index([organizationId])
 }
 
 model Device {
-  id     String @id @default(uuid())
-  name   String
-  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  roomId String
+  id             String       @id @default(uuid())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  name           String
+  room           Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId         String
 
   type   DeviceType   @default(OTHER)
   // Estado lógico do aparelho: o relé está fechado?
@@ -181,75 +257,202 @@ model Device {
   // Só é escrito pelo caminho MQTT (ou pela rota administrativa PUT /devices/:id/online).
   online Boolean      @default(false)
 
+  // Parte relativa do tópico (`devices/<slug>`), única dentro da organização.
+  // No broker o tópico real é `org/<organizationId>/devices/<slug>/...`.
   mqttTopic String?
+  // Nó físico (ESP32) que hospeda este device e o canal que ele ocupa.
+  node      DeviceNode?    @relation(fields: [nodeId], references: [id], onDelete: SetNull)
+  nodeId    String?
+  channel   DeviceChannel?
   metadata  Json?
   // Heartbeat: última comunicação vinda do device via MQTT.
   // Nunca é atualizado por escrita originada em HTTP.
   lastSeen  DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
 
-  readings EnergyReading[]
+  readings       EnergyReading[]
+  sensorReadings SensorReading[]
+  thresholds     SensorThreshold[]
+  alarms         SensorAlarm[]
+
+  @@index([organizationId])
+  @@unique([organizationId, mqttTopic])
 }
 
 model EnergyReading {
-  id        String   @id @default(uuid())
-  device    Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  deviceId  String
-  valueWh   Float // Wh (or watts at moment depending source)
-  voltage   Float?
-  current   Float?
-  timestamp DateTime @default(now())
+  id             String       @id @default(uuid())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  device         Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  deviceId       String
+  // Energia consumida desde a leitura anterior do mesmo device, em Wh.
+  // É o único campo somado pelas agregações: SUM(energyWh) = energia do período.
+  energyWh       Float
+  // Contador acumulado do medidor (PZEM), em Wh, como veio do aparelho. Serve
+  // para derivar `energyWh` pela diferença entre leituras consecutivas.
+  energyTotalWh  Float?
+  // Potência instantânea (W). Nunca é somada.
+  powerW         Float?
+  voltage        Float?
+  current        Float?
+  frequency      Float?
+  powerFactor    Float?
+  timestamp      DateTime     @default(now())
+
+  @@index([deviceId, timestamp])
+  @@index([organizationId, timestamp])
+}
+
+// Nó físico: um ESP32 com credencial MQTT própria. Os devices do nó (um por
+// canal) definem o que a credencial pode publicar e assinar no broker.
+model DeviceNode {
+  id                 String       @id @default(uuid())
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId     String
+  name               String
+  // Usuário MQTT do nó. A senha só existe (com hash) no broker.
+  mqttUsername       String       @unique
+  hardwareId         String?
+  firmwareVersion    String?
+  room               Room?        @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  roomId             String?
+  online             Boolean      @default(false)
+  lastSeen           DateTime?
+  credentialIssuedAt DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  devices Device[]
+
+  @@index([organizationId])
+}
+
+model SensorReading {
+  id             String       @id @default(uuid())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  device         Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  deviceId       String
+  kind           SensorKind
+  // Valor normalizado. MOTION: 1 = movimento, 0 = sem movimento.
+  value          Float
+  unit           String?
+  // Leitura bruta do conversor (ex.: ADC 0-4095), quando difere de `value`.
+  raw            Float?
+  timestamp      DateTime     @default(now())
+
+  @@index([deviceId, kind, timestamp])
+  @@index([organizationId, timestamp])
+}
+
+// Limite de alarme. `deviceId` nulo = padrão da organização para o `kind`;
+// um limite de device sobrescreve o padrão.
+model SensorThreshold {
+  id             String       @id @default(uuid())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  kind           SensorKind
+  device         Device?      @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  deviceId       String?
+  warnAt         Float?
+  alarmAt        Float
+  // Abaixo deste valor um alarme aberto é encerrado (histerese).
+  // Nulo = usa warnAt, ou alarmAt quando warnAt também é nulo.
+  clearAt        Float?
+  enabled        Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId, kind])
+}
+
+model SensorAlarm {
+  id               String       @id @default(uuid())
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId   String
+  device           Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  deviceId         String
+  kind             SensorKind
+  level            AlarmLevel
+  value            Float
+  peakValue        Float
+  threshold        Float
+  startedAt        DateTime     @default(now())
+  clearedAt        DateTime?
+  acknowledgedAt   DateTime?
+  acknowledgedBy   User?        @relation("AlarmAcknowledgedBy", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+  acknowledgedById String?
+
+  @@index([organizationId, clearedAt])
+  @@index([deviceId, kind, clearedAt])
 }
 
 model Automation {
-  id          String      @id @default(uuid())
-  name        String
-  description String?
-  creator     User?       @relation("AutomationCreator", fields: [creatorId], references: [id], onDelete: SetNull)
-  creatorId   String?
-  triggerType TriggerType @default(MANUAL)
-  cron        String? // for SCHEDULE triggers (cron expression)
-  condition   String? // JSON or simple expression for CONDITION triggers (left flexible)
-  action      String // JSON describing action e.g. { "topic": "devices/abc/command", "payload": {"state":"ON"} }
-  enabled     Boolean     @default(true)
-  lastRunAt   DateTime?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  id             String       @id @default(uuid())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  name           String
+  description    String?
+  creator        User?        @relation("AutomationCreator", fields: [creatorId], references: [id], onDelete: SetNull)
+  creatorId      String?
+  triggerType    TriggerType  @default(MANUAL)
+  cron           String? // for SCHEDULE triggers (cron expression)
+  condition      String? // JSON or simple expression for CONDITION triggers (left flexible)
+  action         String // JSON describing action e.g. { "topic": "devices/abc/command", "payload": {"state":"ON"} }
+  enabled        Boolean      @default(true)
+  // Último resultado avaliado de uma automação CONDITION. Ela só dispara na
+  // transição de falso para verdadeiro, não a cada avaliação.
+  conditionState Boolean      @default(false)
+  lastRunAt      DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   history AutomationHistory[]
+
+  @@index([organizationId])
 }
 
 model AutomationHistory {
-  id           String     @id @default(uuid())
-  automation   Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
-  automationId String
-  runAt        DateTime   @default(now())
-  success      Boolean
-  logs         String?
+  id             String       @id @default(uuid())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  automation     Automation   @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  automationId   String
+  runAt          DateTime     @default(now())
+  success        Boolean
+  logs           String?
 }
 
 model Notification {
-  id        String           @id @default(uuid())
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    String
-  type      NotificationType
-  title     String
-  message   String
-  read      Boolean          @default(false)
-  link      String?
-  createdAt DateTime         @default(now())
+  id             String           @id @default(uuid())
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId         String
+  type           NotificationType
+  title          String
+  message        String
+  read           Boolean          @default(false)
+  link           String?
+  createdAt      DateTime         @default(now())
+
+  @@index([organizationId])
 }
 
 model Report {
-  id          String       @id @default(uuid())
-  type        ReportType
-  title       String
-  format      ReportFormat
-  filters     Json
-  status      ReportStatus @default(PENDING)
-  fileUrl     String?
-  createdBy   User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  createdById String?
-  createdAt   DateTime     @default(now())
+  id             String       @id @default(uuid())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  type           ReportType
+  title          String
+  format         ReportFormat
+  filters        Json
+  status         ReportStatus @default(PENDING)
+  fileUrl        String?
+  createdBy      User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdById    String?
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId])
 }

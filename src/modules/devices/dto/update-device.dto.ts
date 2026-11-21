@@ -10,9 +10,11 @@ import {
   Min,
   Max,
   IsDateString,
+  ValidateIf,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { DeviceChannel } from '@prisma/client';
 import { DeviceType, DeviceStatus } from '../interfaces/devices.interface';
 
 export class UpdateDeviceDto {
@@ -41,12 +43,14 @@ export class UpdateDeviceDto {
   @IsEnum(DeviceStatus)
   status?: DeviceStatus;
 
-  @ApiPropertyOptional({ example: 'building/floor/room/device' })
+  @ApiPropertyOptional({
+    example: 'devices/ac-a206',
+    description: 'Base dos tópicos do device: devices/<slug>, um único nível após devices/ (o backend assina devices/+/<sufixo>).',
+  })
   @IsOptional()
   @IsString()
-  @Matches(/^[-\w\/]+$/, {
-    message:
-      'mqttTopic must contain only letters, numbers, hyphens, underscores and slashes',
+  @Matches(/^devices\/[A-Za-z0-9_-]+$/, {
+    message: 'mqttTopic deve ter o formato devices/<slug> (letras, números, - e _)',
   })
   mqttTopic?: string;
 
@@ -81,4 +85,23 @@ export class UpdateDeviceDto {
   @IsOptional()
   @IsDateString()
   lastSeen?: Date | string;
+
+  @ApiPropertyOptional({
+    description: 'Nó físico (ESP32) que hospeda o device. null desvincula.',
+    nullable: true,
+  })
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsUUID()
+  nodeId?: string | null;
+
+  @ApiPropertyOptional({
+    enum: DeviceChannel,
+    nullable: true,
+    description: 'Canal físico no nó. Define que leituras o device pode enviar.',
+  })
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsEnum(DeviceChannel)
+  channel?: DeviceChannel | null;
 }

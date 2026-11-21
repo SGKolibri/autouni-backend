@@ -48,13 +48,13 @@ export const VALID_REGISTER_DTO_FULL = {
   ...VALID_REGISTER_DTO,
   phone: '+55 11 91234-5678',
   cpf: '12345678901',
-  role: 'VIEWER',
   avatar: 'http://example.com/avatar.jpg',
 };
 
 export const VALID_CREATE_USER_DTO = {
   name: 'Novo Usuario',
   email: 'novo@email.com',
+  password: 'novo123456',
 };
 
 export const VALID_CREATE_ADMIN_DTO = {

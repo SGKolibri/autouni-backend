@@ -3,8 +3,12 @@ import {
   IsEnum,
   IsUUID,
   MinLength,
+  IsOptional,
+  IsInt,
+  Min,
+  Max,
 } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { RoomType } from '@prisma/client';
 
 export class CreateRoomDto {
@@ -30,4 +34,15 @@ export class CreateRoomDto {
   })
   @IsEnum(RoomType)
   type: RoomType;
+
+  @ApiPropertyOptional({
+    description: 'Segundos sem movimento (PIR) até a sala ser considerada vazia',
+    example: 600,
+    default: 600,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(30)
+  @Max(86400)
+  vacancyTimeoutSec?: number;
 }

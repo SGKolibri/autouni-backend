@@ -5,6 +5,19 @@ import * as path from 'path';
 
 const prisma = new PrismaClient();
 
+// Organização criada pela migração 20261117120000_add_organizations. O seed
+// popula só ela; outras organizações nascem por `npm run org:create`.
+const DEFAULT_ORG_ID = '00000000-0000-0000-0000-000000000001';
+const organizationId = DEFAULT_ORG_ID;
+
+async function seedOrganization() {
+  await prisma.organization.upsert({
+    where: { id: DEFAULT_ORG_ID },
+    update: {},
+    create: { id: DEFAULT_ORG_ID, name: 'Organização padrão', slug: 'default' },
+  });
+}
+
 // Interfaces para tipagem dos dados do seed
 interface SeedUser {
   email: string;
@@ -103,9 +116,10 @@ async function seedUsers() {
     const hashedPassword = await hashPassword(userData.password);
 
     await prisma.user.upsert({
-      where: { email: userData.email },
+      where: { organizationId_email: { organizationId, email: userData.email } },
       update: {},
       create: {
+        organizationId,
         email: userData.email,
         name: userData.name,
         password: hashedPassword,
@@ -128,7 +142,7 @@ async function seedBuildings() {
   const buildings = loadJSON<SeedBuilding[]>('buildings.json');
 
   console.log('Verifying if buildings exist or need to be created...');
-  const existingBuildings = await prisma.building.findMany();
+  const existingBuildings = await prisma.building.findMany({ where: { organizationId } });
   if (existingBuildings.length > 0) {
     console.log(
       `${existingBuildings.length} buildings already exist. Skipping building seeding.`,
@@ -139,13 +153,14 @@ async function seedBuildings() {
   for (const buildingData of buildings) {
     // Buscar building existente por nome
     let building = await prisma.building.findFirst({
-      where: { name: buildingData.name },
+      where: { organizationId, name: buildingData.name },
     });
 
     // Se não existir, criar
     if (!building) {
       building = await prisma.building.create({
         data: {
+          organizationId,
           name: buildingData.name,
           description: buildingData.description,
           location: buildingData.location,
@@ -168,6 +183,7 @@ async function seedBuildings() {
       if (!floor) {
         floor = await prisma.floor.create({
           data: {
+            organizationId,
             buildingId: building.id,
             number: floorData.number,
             name: floorData.name,
@@ -190,6 +206,7 @@ async function seedBuildings() {
         if (!existingRoom) {
           await prisma.room.create({
             data: {
+              organizationId,
               floorId: floor.id,
               name: roomData.name,
               type: roomData.type,
@@ -212,7 +229,7 @@ async function seedDevices() {
   const roomDevices = loadJSON<SeedRoomDevice[]>('devices.json');
 
   console.log('Verifying if devices exist or need to be created...');
-  const existingDevices = await prisma.device.findMany();
+  const existingDevices = await prisma.device.findMany({ where: { organizationId } });
   if (existingDevices.length > 0) {
     console.log(
       `${existingDevices.length} devices already exist. Skipping device seeding.`,
@@ -222,7 +239,7 @@ async function seedDevices() {
 
   for (const roomDevice of roomDevices) {
     const room = await prisma.room.findFirst({
-      where: { name: roomDevice.roomName },
+      where: { organizationId, name: roomDevice.roomName },
     });
 
     if (!room) {
@@ -233,13 +250,14 @@ async function seedDevices() {
     for (const deviceData of roomDevice.devices) {
       // Buscar device existente por mqttTopic
       const existingDevice = await prisma.device.findFirst({
-        where: { mqttTopic: deviceData.mqttTopic },
+        where: { organizationId, mqttTopic: deviceData.mqttTopic },
       });
 
       // Se não existir, criar
       if (!existingDevice) {
         await prisma.device.create({
           data: {
+            organizationId,
             name: deviceData.name,
             roomId: room.id,
             type: deviceData.type,
@@ -264,7 +282,7 @@ async function seedAutomations() {
   const automations = loadJSON<SeedAutomation[]>('automations.json');
 
   console.log('Verifying if automations exist or need to be created...');
-  const existingAutomations = await prisma.automation.findMany();
+  const existingAutomations = await prisma.automation.findMany({ where: { organizationId } });
   if (existingAutomations.length > 0) {
     console.log(
       `${existingAutomations.length} automations already exist. Skipping automation seeding.`,
@@ -273,7 +291,7 @@ async function seedAutomations() {
   }
 
   const adminUser = await prisma.user.findFirst({
-    where: { role: 'ADMIN' },
+    where: { organizationId, role: 'ADMIN' },
   });
 
   if (!adminUser) {
@@ -284,20 +302,31 @@ async function seedAutomations() {
   for (const autoData of automations) {
     // Buscar automation existente por nome
     const existingAuto = await prisma.automation.findFirst({
-      where: { name: autoData.name },
+      where: { organizationId, name: autoData.name },
     });
 
     // Se não existir, criar
+    // As ações de exemplo publicam em tópicos de grupo (devices/lights/all/...)
+    // que nenhum device assina, e o backend só aceita comando para um device da
+    // organização. Elas entram desativadas até serem apontadas para devices reais.
+    const topic: unknown = autoData.action?.topic;
+    const actionIsValid =
+      typeof autoData.action?.deviceId === 'string' ||
+      (typeof topic === 'string' && /^devices\/[A-Za-z0-9_-]+\/command$/.test(topic));
+
     if (!existingAuto) {
       await prisma.automation.create({
         data: {
+          organizationId,
           name: autoData.name,
-          description: autoData.description,
+          description: actionIsValid
+            ? autoData.description
+            : `${autoData.description} (desativada: aponte a ação para um dispositivo)`,
           creatorId: adminUser.id,
           triggerType: autoData.triggerType,
           cron: autoData.cron,
           action: JSON.stringify(autoData.action),
-          enabled: autoData.enabled,
+          enabled: autoData.enabled && actionIsValid,
         },
       });
     }
@@ -313,7 +342,7 @@ async function seedSampleEnergyReadings() {
   console.log('🌱 Seeding sample energy readings...');
 
   console.log('Verifying if devices already have energy readings...');
-  const existingReadings = await prisma.energyReading.findFirst();
+  const existingReadings = await prisma.energyReading.findFirst({ where: { organizationId } });
   if (existingReadings) {
     console.log(
       `Energy readings already exist. Skipping sample energy readings seeding.`,
@@ -323,6 +352,7 @@ async function seedSampleEnergyReadings() {
 
   const devices = await prisma.device.findMany({
     where: {
+      organizationId,
       type: { in: ['LIGHT', 'AC', 'PROJECTOR'] },
       status: 'ON',
     },
@@ -346,23 +376,31 @@ async function seedSampleEnergyReadings() {
   const READINGS_PER_DEVICE = 5;
   let readingCount = 0;
 
+  // Cada leitura cobre o intervalo desde a anterior: energyWh = potência x
+  // duração do intervalo, que é exatamente o que as agregações somam.
+  const intervalHours = elapsedMs / (READINGS_PER_DEVICE + 1) / 3_600_000;
+
   for (const device of devices) {
-    const baseWh =
+    const basePowerW =
       device.type === 'AC' ? 800 : device.type === 'PROJECTOR' ? 200 : 40;
 
     for (let i = 0; i < READINGS_PER_DEVICE; i++) {
-      // Spread evenly from midnight to now so every reading falls within today
       const fraction = (i + 1) / (READINGS_PER_DEVICE + 1);
       const timestamp = new Date(todayStart.getTime() + fraction * elapsedMs);
       const jitter = 1 + (Math.random() * 0.2 - 0.1); // ±10%
-      const valueWh = parseFloat((baseWh * jitter).toFixed(2));
+      const powerW = parseFloat((basePowerW * jitter).toFixed(1));
+      const voltage = parseFloat((215 + Math.random() * 10).toFixed(1));
 
       await prisma.energyReading.create({
         data: {
+          organizationId,
           deviceId: device.id,
-          valueWh,
-          voltage: parseFloat((215 + Math.random() * 10).toFixed(4)),
-          current: parseFloat((valueWh / 220).toFixed(2)),
+          powerW,
+          energyWh: parseFloat((powerW * intervalHours).toFixed(3)),
+          voltage,
+          current: parseFloat((powerW / voltage).toFixed(3)),
+          frequency: 60,
+          powerFactor: 0.95,
           timestamp,
         },
       });
@@ -376,6 +414,25 @@ async function seedSampleEnergyReadings() {
   );
 }
 
+// Seed: limites padrão de gás (leitura bruta do ADC de 12 bits do ESP32).
+// Valores de partida; calibrar depois do burn-in de 24-48 h dos sensores.
+async function seedSensorThresholds() {
+  console.log('🌱 Seeding default gas thresholds...');
+  const defaults = [
+    { kind: 'GAS_MQ2' as const, warnAt: 1500, alarmAt: 1800, clearAt: 1300 },
+    { kind: 'GAS_MQ135' as const, warnAt: 1500, alarmAt: 1800, clearAt: 1300 },
+  ];
+  for (const t of defaults) {
+    const existing = await prisma.sensorThreshold.findFirst({
+      where: { organizationId, kind: t.kind, deviceId: null },
+    });
+    if (!existing) {
+      await prisma.sensorThreshold.create({ data: { organizationId, ...t } });
+    }
+  }
+  console.log('✅ Gas thresholds seeded');
+}
+
 // Main seed function
 async function main() {
   console.log('');
@@ -385,6 +442,7 @@ async function main() {
   console.log('');
 
   try {
+    await seedOrganization();
     await seedUsers();
     console.log('');
 
@@ -398,6 +456,9 @@ async function main() {
     console.log('');
 
     await seedSampleEnergyReadings();
+    console.log('');
+
+    await seedSensorThresholds();
     console.log('');
 
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');

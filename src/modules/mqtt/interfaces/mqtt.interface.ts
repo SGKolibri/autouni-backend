@@ -1,37 +1,13 @@
-import { Device } from '@prisma/client';
-
-export interface MqttMessage {
-  topic: string;
-  payload: any;
-  qos?: 0 | 1 | 2;
-  retain?: boolean;
-}
-
-export interface DeviceStatusUpdate {
-  deviceId: string;
-  status: string;
-  online?: boolean;
-}
-
-export interface DeviceEnergyReading {
-  deviceId: string;
-  valueWh: number;
-  voltage?: number;
-  current?: number;
-  power?: number;
-}
+import { Device, DeviceNode, DeviceStatus } from '@prisma/client';
 
 export interface IMqttRepository {
-  findDeviceByTopic(topic: string): Promise<Device | null>;
   findDeviceByMqttTopic(mqttTopic: string): Promise<Device | null>;
-  updateDeviceStatus(deviceId: string, status: string): Promise<Device>;
+  findNodeByUsername(mqttUsername: string): Promise<DeviceNode | null>;
+  updateDeviceStatus(deviceId: string, status: DeviceStatus): Promise<Device>;
   updateDeviceOnlineStatus(deviceId: string, online: boolean): Promise<Device>;
-  createEnergyReading(data: {
-    deviceId: string;
-    valueWh: number;
-    voltage?: number | null;
-    current?: number | null;
-  }): Promise<any>;
+  touchDevice(deviceId: string): Promise<void>;
+  touchNode(nodeId: string | null): Promise<void>;
+  setNodeOnline(nodeId: string, online: boolean): Promise<string[]>;
 }
 
 export interface IMqttService {

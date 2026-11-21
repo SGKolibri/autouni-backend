@@ -1,48 +1,32 @@
 import { Injectable } from '@nestjs/common';
-import { Device, EnergyReading } from '@prisma/client';
+import { Device, DeviceNode, DeviceStatus } from '@prisma/client';
 import { PrismaService } from '../../../../prisma/prisma.service';
 import { IMqttRepository } from '../interfaces/mqtt.interface';
 
+/**
+ * Único caminho autorizado a escrever `lastSeen` e `online`: uma mensagem
+ * chegando pelo broker é a evidência de que o aparelho está vivo. Escritas
+ * vindas de HTTP (UI, automações) não tocam nesses campos.
+ *
+ * Tudo roda no tenant indicado pelo prefixo `org/<id>/` do tópico.
+ */
 @Injectable()
 export class MqttRepository implements IMqttRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findDeviceByTopic(topic: string): Promise<Device | null> {
-    // Try exact match first
-    let device = await this.prisma.device.findFirst({
-      where: { mqttTopic: topic },
-    });
-
-    // If not found, try wildcard match (remove last segment)
-    if (!device) {
-      const baseTopic = topic.split('/').slice(0, -1).join('/');
-      device = await this.prisma.device.findFirst({
-        where: { mqttTopic: baseTopic },
-      });
-    }
-
-    return device;
-  }
-
   async findDeviceByMqttTopic(mqttTopic: string): Promise<Device | null> {
-    return this.prisma.device.findFirst({
-      where: { mqttTopic },
-    });
+    // Roda no tenant do prefixo do tópico; o slug só é único dentro dele.
+    return this.prisma.device.findFirst({ where: { mqttTopic } });
   }
 
-  /**
-   * Este é o único caminho autorizado a escrever `lastSeen` e `online`:
-   * uma mensagem chegando pelo broker é a evidência de que o aparelho está vivo.
-   * Escritas vindas de HTTP (UI, automações) não tocam nesses campos.
-   */
-  async updateDeviceStatus(deviceId: string, status: string): Promise<Device> {
+  async findNodeByUsername(mqttUsername: string): Promise<DeviceNode | null> {
+    return this.prisma.deviceNode.findFirst({ where: { mqttUsername } });
+  }
+
+  async updateDeviceStatus(deviceId: string, status: DeviceStatus): Promise<Device> {
     return this.prisma.device.update({
       where: { id: deviceId },
-      data: {
-        status: status as any,
-        lastSeen: new Date(),
-        online: true,
-      },
+      data: { status, lastSeen: new Date(), online: true },
     });
   }
 
@@ -59,28 +43,37 @@ export class MqttRepository implements IMqttRepository {
     });
   }
 
-  async createEnergyReading(data: {
-    deviceId: string;
-    valueWh: number;
-    voltage?: number | null;
-    current?: number | null;
-  }): Promise<EnergyReading> {
-    const [reading] = await this.prisma.$transaction([
-      this.prisma.energyReading.create({
-        data: {
-          deviceId: data.deviceId,
-          valueWh: data.valueWh,
-          voltage: data.voltage,
-          current: data.current,
-        },
-      }),
-      // Telemetria também é heartbeat.
-      this.prisma.device.update({
-        where: { id: data.deviceId },
-        data: { lastSeen: new Date(), online: true },
-      }),
-    ]);
+  // Telemetria também é heartbeat.
+  async touchDevice(deviceId: string): Promise<void> {
+    await this.prisma.device.update({
+      where: { id: deviceId },
+      data: { lastSeen: new Date(), online: true },
+    });
+  }
 
-    return reading;
+  async touchNode(nodeId: string | null): Promise<void> {
+    if (!nodeId) return;
+    await this.prisma.deviceNode.update({
+      where: { id: nodeId },
+      data: { lastSeen: new Date(), online: true },
+    });
+  }
+
+  /** Marca o nó e todos os devices dele; devolve os ids afetados. */
+  async setNodeOnline(nodeId: string, online: boolean): Promise<string[]> {
+    const now = new Date();
+    await this.prisma.deviceNode.update({
+      where: { id: nodeId },
+      data: { online, lastSeen: now },
+    });
+    const devices = await this.prisma.device.findMany({
+      where: { nodeId },
+      select: { id: true },
+    });
+    await this.prisma.device.updateMany({
+      where: { nodeId },
+      data: { online, lastSeen: now },
+    });
+    return devices.map((d) => d.id);
   }
 }

@@ -5,10 +5,16 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { User } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { AuthRepository } from '../repository/auth.repository';
 import { LoginDto } from '../dto/auth.dto';
-import { JwtPayload, LoginResponse, RefreshResponse } from '../interfaces/auth.interfaces';
+import {
+  JwtPayload,
+  LoginResponse,
+  RefreshResponse,
+  UserWithOrganization,
+} from '../interfaces/auth.interfaces';
 import { RegisterDto } from '../dto/register.dto';
 
 @Injectable()
@@ -18,47 +24,59 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
-  async validateUser(email: string, password: string) {
-    const user = await this.authRepository.findUserByEmail(email);
+  /**
+   * O mesmo e-mail pode existir em várias organizações. A senha é conferida em
+   * todas as contas candidatas, para que a resposta não revele em quais
+   * organizações um e-mail existe; só quando a senha confere em mais de uma é
+   * que o cliente precisa informar `organization`.
+   */
+  async validateUser(email: string, password: string, organization?: string) {
+    const candidates = await this.authRepository.findUsersByEmailForLogin(email, organization);
 
-    if (!user || !user.password) {
-      throw new UnauthorizedException('Credenciais inválidas');
+    const matches: UserWithOrganization[] = [];
+    for (const candidate of candidates) {
+      if (candidate.password && (await bcrypt.compare(password, candidate.password))) {
+        matches.push(candidate);
+      }
     }
 
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-
-    if (!isPasswordValid) {
+    if (matches.length === 0) {
       throw new UnauthorizedException('Credenciais inválidas');
     }
+    if (matches.length > 1) {
+      throw new BadRequestException({
+        message: 'Informe a organização para entrar',
+        organizations: matches.map((m) => ({ slug: m.organization.slug, name: m.organization.name })),
+      });
+    }
 
-    const { password: _, ...result } = user;
+    const { password: _, ...result } = matches[0];
     return result;
   }
 
-  async login(loginDto: LoginDto): Promise<LoginResponse> {
-    const user = await this.validateUser(loginDto.email, loginDto.password);
-
+  private sign(user: Pick<User, 'id' | 'email' | 'role' | 'name' | 'organizationId'>, typ: JwtPayload['typ']) {
     const payload: JwtPayload = {
       email: user.email,
       sub: user.id,
       role: user.role,
       name: user.name,
+      orgId: user.organizationId,
+      typ,
     };
+    return this.jwtService.sign(payload, { expiresIn: typ === 'access' ? '15m' : '7d' });
+  }
 
-    const accessToken = this.jwtService.sign(payload, {
-      expiresIn: '15m',
-    });
+  async login(loginDto: LoginDto): Promise<LoginResponse> {
+    const user = await this.validateUser(loginDto.email, loginDto.password, loginDto.organization);
 
-    const refreshToken = this.jwtService.sign(payload, {
-      expiresIn: '7d',
-    });
+    const accessToken = this.sign(user, 'access');
+    const refreshToken = this.sign(user, 'refresh');
 
-    // Store refresh token hash in database
     const tokenHash = await bcrypt.hash(refreshToken, 10);
     await this.authRepository.createRefreshToken({
       userId: user.id,
       tokenHash,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     });
 
     return {
@@ -68,37 +86,26 @@ export class AuthService {
     };
   }
 
+  /** Só chamado por ADMIN autenticado: o usuário nasce VIEWER na organização dele. */
   async register(registerDto: RegisterDto): Promise<Omit<LoginResponse['user'], 'password'>> {
-    // Check if user already exists by email
-    const existingUserByEmail = await this.authRepository.findUserByEmail(
-      registerDto.email,
-    );
-
+    const existingUserByEmail = await this.authRepository.findUserByEmail(registerDto.email);
     if (existingUserByEmail) {
       throw new ConflictException('Email já cadastrado');
     }
 
-    // Check if user already exists by CPF (if provided)
     if (registerDto.cpf) {
-      const existingUserByCpf = await this.authRepository.findUserByCpf(
-        registerDto.cpf,
-      );
-
+      const existingUserByCpf = await this.authRepository.findUserByCpf(registerDto.cpf);
       if (existingUserByCpf) {
         throw new ConflictException('CPF já cadastrado');
       }
     }
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(registerDto.password, 10);
-
-    // Create user
     const user = await this.authRepository.createUser({
       ...registerDto,
       password: hashedPassword,
     });
 
-    // Remove password from response
     const { password, ...result } = user;
     return result;
   }
@@ -106,44 +113,29 @@ export class AuthService {
   async refreshToken(token: string): Promise<RefreshResponse> {
     try {
       const payload = this.jwtService.verify<JwtPayload>(token);
+      if (payload.typ !== 'refresh' || !payload.orgId) {
+        throw new UnauthorizedException('Token inválido');
+      }
 
-      // Verify if refresh token exists in database
-      const storedTokens = await this.authRepository.findRefreshTokensByUserId(
-        payload.sub,
-      );
-
+      const storedTokens = await this.authRepository.findRefreshTokensByUserId(payload.sub);
       if (!storedTokens.length) {
         throw new UnauthorizedException('Token inválido');
       }
 
       const isValidToken = await Promise.all(
-        storedTokens.map(async (stored) => {
-          return await bcrypt.compare(token, stored.tokenHash);
-        }),
+        storedTokens.map((stored) => bcrypt.compare(token, stored.tokenHash)),
       );
-
       if (!isValidToken.some((valid) => valid)) {
         throw new UnauthorizedException('Token inválido');
       }
 
-      const user = await this.authRepository.findUserByEmail(payload.email);
-
+      // Relê o usuário para que papel e organização venham do banco, não do token.
+      const user = await this.authRepository.findUserForRefresh(payload.sub, payload.orgId);
       if (!user) {
         throw new UnauthorizedException('Usuário não encontrado');
       }
 
-      const newAccessToken = this.jwtService.sign({
-        email: user.email,
-        sub: user.id,
-        role: user.role,
-        name: user.name,
-      } as JwtPayload, {
-        expiresIn: '15m',
-      });
-
-      return {
-        accessToken: newAccessToken,
-      };
+      return { accessToken: this.sign(user, 'access') };
     } catch (error) {
       if (error instanceof UnauthorizedException) {
         throw error;

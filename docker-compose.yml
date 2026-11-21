@@ -1,17 +1,23 @@
 services:
   mqtt:
-    image: eclipse-mosquitto:latest
+    # Versão fixa: o caminho do plugin dynamic-security faz parte do contrato.
+    image: eclipse-mosquitto:2.0.20
     container_name: autoUniMqtt
     restart: unless-stopped
     ports:
       - '1883:1883'
-      - '9001:9001'
+    environment:
+      # Só usados na primeira subida, para criar o administrador do broker.
+      MQTT_ADMIN_USERNAME: ${MQTT_USERNAME:?defina MQTT_USERNAME no .env}
+      MQTT_ADMIN_PASSWORD: ${MQTT_PASSWORD:?defina MQTT_PASSWORD no .env}
     volumes:
+      - ./mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro,z
+      - ./mosquitto/init.sh:/mosquitto/init.sh:ro,z
       - mqtt-data:/mosquitto/data
       - mqtt-logs:/mosquitto/log
     networks:
       - autouni-network
-    command: mosquitto -c /mosquitto-no-auth.conf
+    entrypoint: ['/bin/sh', '/mosquitto/init.sh']
 
   db:
     image: postgres:16-alpine
@@ -50,6 +56,10 @@ services:
       DATABASE_URL: postgresql://postgres:autounidockeradmin@db:5432/autounidb?schema=public
       # MQTT dentro do container usa o hostname do serviço (mqtt)
       MQTT_URL: ${MQTT_URL:-mqtt://mqtt:1883}
+      MQTT_USERNAME: ${MQTT_USERNAME}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+      # Endereço que os ESP32 usam (vai na resposta de POST /nodes).
+      MQTT_PUBLIC_URL: ${MQTT_PUBLIC_URL:-}
       # Porta interna fixa da API no container
       PORT: 3000
       JWT_SECRET: ${JWT_SECRET}

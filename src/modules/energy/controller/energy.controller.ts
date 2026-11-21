@@ -29,8 +29,10 @@ import {
   EnergyComparisonQueryDto,
 } from '../dto/energy.dto';
 import { AuthGuard } from '../../../guards/auth.guard';
+import { RolesGuard } from '../../../common/auth/roles.guard';
+import { ADMINS, INSTALLERS, Roles } from '../../../common/auth/roles';
 
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, RolesGuard)
 @ApiBearerAuth('JWT-auth')
 @ApiTags('Energy')
 @Controller('energy')
@@ -128,6 +130,7 @@ export class EnergyController {
   }
 
   @Post('readings')
+  @Roles(...INSTALLERS)
   @ApiOperation({ 
     summary: 'Create a new energy reading',
     description: 'Registra uma nova leitura de consumo energético para um dispositivo'
@@ -139,7 +142,9 @@ export class EnergyController {
       example: {
         id: 'uuid-reading-1',
         deviceId: 'uuid-device-1',
-        valueWh: 150.5,
+        energyWh: 2.5,
+        energyTotalWh: 123456.7,
+        powerW: 150,
         voltage: 220,
         current: 0.68,
         timestamp: '2025-01-11T10:00:00.000Z',
@@ -153,7 +158,7 @@ export class EnergyController {
     schema: {
       example: {
         statusCode: 400,
-        message: ['valueWh must be a positive number'],
+        message: 'payload sem energyWh, energyTotalWh nem powerW',
         error: 'Bad Request'
       }
     }
@@ -299,6 +304,7 @@ export class EnergyController {
   }
 
   @Delete('readings/cleanup')
+  @Roles(...ADMINS)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ 
     summary: 'Clean up old energy readings',

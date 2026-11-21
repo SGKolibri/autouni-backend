@@ -598,7 +598,7 @@ Content-Type: application/json
 
 {
   "deviceId": "device-1",
-  "valueWh": 150.5,
+  "energyWh": 150.5,
   "voltage": 220,
   "current": 0.68
 }
@@ -609,7 +609,7 @@ Content-Type: application/json
 {
   "id": "reading-1",
   "deviceId": "device-1",
-  "valueWh": 150.5,
+  "energyWh": 150.5,
   "voltage": 220,
   "current": 0.68,
   "timestamp": "2024-11-05T15:30:00.000Z"
@@ -634,7 +634,7 @@ Authorization: Bearer {accessToken}
   {
     "id": "reading-1",
     "deviceId": "device-1",
-    "valueWh": 150.5,
+    "energyWh": 150.5,
     "voltage": 220,
     "current": 0.68,
     "timestamp": "2024-11-05T15:30:00.000Z"
@@ -642,7 +642,7 @@ Authorization: Bearer {accessToken}
   {
     "id": "reading-2",
     "deviceId": "device-1",
-    "valueWh": 145.2,
+    "energyWh": 145.2,
     "voltage": 220,
     "current": 0.66,
     "timestamp": "2024-11-05T15:00:00.000Z"
@@ -1308,35 +1308,34 @@ socket.on('energy:update', (data) => {
   console.log('Nova leitura energética:', data);
   // {
   //   deviceId: 'e497d85a-b9c7-4c7f-9e9c-0aecb6e2a025',
-  //   power: 150.5,
-  //   energy: 150.5,
+  //   power: 150.5,          // potência instantânea (W)
+  //   energy: 0.21,          // energia do intervalo (Wh)
+  //   energyTotalWh: 123456.7,
   //   voltage: 220,
   //   current: 0.68,
-  //   reading: { id, deviceId, valueWh, voltage, current, timestamp },
+  //   frequency: 60,
+  //   powerFactor: 0.95,
+  //   reading: { id, deviceId, energyWh, powerW, voltage, current, timestamp },
   //   timestamp: '2026-09-03T03:01:04.449Z'
   // }
 });
 ```
 
-`power` e `energy` carregam o mesmo `valueWh` — o schema define o campo como
-"Wh (or watts at moment depending source)", então o que o device manda é a leitura
-instantânea. O registro completo continua disponível em `reading`.
+`power` é a potência instantânea (`powerW`) e `energy` é a energia consumida desde a
+leitura anterior (`energyWh`, o valor somado nas estatísticas). O registro completo
+continua disponível em `reading`. Ver [MQTT_SETUP.md](./MQTT_SETUP.md#devicesslugenergy).
 
-#### mqtt:raw - Mensagens MQTT sem dispositivo cadastrado
+#### sensor:update, sensor:alarm, room:occupancy, node:online
 
 ```javascript
-socket.on('mqtt:raw', (data) => {
-  console.log('Mensagem MQTT:', data);
-  // {
-  //   topic: 'devices/nao-cadastrado/status',
-  //   payload: 'ON'
-  // }
-});
+socket.on('sensor:update', (d) => {});   // { deviceId, roomId, kind: 'GAS_MQ2'|'GAS_MQ135'|'MOTION', value, unit, raw, timestamp }
+socket.on('sensor:alarm', (d) => {});    // { state: 'opened'|'escalated'|'cleared'|'acknowledged', alarm, deviceId, roomId }
+socket.on('room:occupancy', (d) => {});  // { roomId, occupied, timestamp }
+socket.on('node:online', (d) => {});     // { nodeId, online, timestamp }
 ```
 
-Útil para descobrir dispositivos que estão publicando mas ainda não têm `mqttTopic`
-cadastrado. Quando o device é conhecido mas o sufixo do tópico não é tratado, o payload
-inclui também `deviceId`.
+O antigo `mqtt:raw` foi removido: ele repassava a todos os sockets o tráfego de tópicos
+sem device cadastrado. Todos os eventos agora vão só para a organização do device.
 
 ### Juntar-se a uma Sala (Room)
 
@@ -1395,7 +1394,7 @@ mosquitto_pub -h localhost -p 1883 \
 ```bash
 mosquitto_pub -h localhost -p 1883 \
   -t 'devices/device-1/energy' \
-  -m '{"valueWh":150.5,"voltage":220,"current":0.68}'
+  -m '{"powerW":150.5,"energyTotalWh":123456.7,"voltage":220,"current":0.68}'
 ```
 
 ### Publicar Status Online (via MQTT)
@@ -1483,7 +1482,9 @@ void loop() {
     float current = readCurrent();
     float power = voltage * current;
     
-    String payload = "{\"valueWh\":" + String(power) + 
+    // Contrato atual: powerW + energyTotalWh (contador do medidor). Ver MQTT_SETUP.md.
+    String payload = "{\"powerW\":" + String(power) + 
+                     ",\"energyTotalWh\":" + String(readEnergyTotalWh()) + 
                      ",\"voltage\":" + String(voltage) + 
                      ",\"current\":" + String(current) + "}";
     
@@ -1693,7 +1694,7 @@ GET /api/energy/readings?offset=0&limit=100
 ```javascript
 // Validação de leitura energética
 const validateReading = (reading) => {
-  if (reading.valueWh < 0) throw new Error('valueWh must be positive');
+  if (reading.energyWh < 0) throw new Error('energyWh must be positive');
   if (reading.voltage < 0) throw new Error('voltage must be positive');
   if (reading.current < 0) throw new Error('current must be positive');
   return true;

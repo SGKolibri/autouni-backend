@@ -7,6 +7,8 @@ export interface TestJwtPayload {
   sub: string;
   role: string;
   name: string;
+  orgId: string;
+  typ: 'access' | 'refresh';
 }
 
 export const DEFAULT_TEST_PAYLOAD: TestJwtPayload = {
@@ -14,6 +16,8 @@ export const DEFAULT_TEST_PAYLOAD: TestJwtPayload = {
   sub: 'test-user-id-uuid',
   role: 'ADMIN',
   name: 'Test User',
+  orgId: 'test-org-id',
+  typ: 'access',
 };
 
 export function generateTestToken(

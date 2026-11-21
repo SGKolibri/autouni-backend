@@ -8,6 +8,7 @@ import {
   Param,
   UseGuards,
   Request,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -19,15 +20,18 @@ import {
 import { NotificationsService } from '../service/notifications.service';
 import { CreateNotificationDto } from '../dto/create-notification.dto';
 import { AuthGuard } from '../../../guards/auth.guard';
+import { RolesGuard } from '../../../common/auth/roles.guard';
+import { ADMINS, Roles } from '../../../common/auth/roles';
 
 @ApiTags('Notifications')
 @ApiBearerAuth('JWT-auth')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, RolesGuard)
 @Controller('notifications')
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
   @Post()
+  @Roles(...ADMINS)
   @ApiOperation({ 
     summary: 'Criar nova notificação',
     description: 'Cria uma nova notificação para um usuário específico'
@@ -67,6 +71,7 @@ export class NotificationsController {
   }
 
   @Get()
+  @Roles(...ADMINS)
   @ApiOperation({ summary: 'Listar todas as notificações' })
   @ApiResponse({
     status: 200,
@@ -83,7 +88,7 @@ export class NotificationsController {
     description: 'Lista de notificações retornada',
   })
   async findMyNotifications(@Request() req: any) {
-    return this.notificationsService.findByUser(req.user);
+    return this.notificationsService.findByUser(req.user.sub);
   }
 
   @Get('me/unread')
@@ -95,7 +100,7 @@ export class NotificationsController {
     description: 'Lista de notificações não lidas retornada',
   })
   async findMyUnreadNotifications(@Request() req: any) {
-    return this.notificationsService.findUnreadByUser(req.user);
+    return this.notificationsService.findUnreadByUser(req.user.sub);
   }
 
   @Get('user/:userId')
@@ -105,7 +110,10 @@ export class NotificationsController {
     status: 200,
     description: 'Lista de notificações retornada',
   })
-  async findByUser(@Param('userId') userId: string) {
+  async findByUser(@Param('userId') userId: string, @Request() req: any) {
+    if (req.user.role !== 'ADMIN' && req.user.sub !== userId) {
+      throw new ForbiddenException('Você só pode ver as próprias notificações');
+    }
     return this.notificationsService.findByUser(userId);
   }
 
@@ -114,8 +122,8 @@ export class NotificationsController {
   @ApiParam({ name: 'id', description: 'ID da notificação' })
   @ApiResponse({ status: 200, description: 'Notificação encontrada' })
   @ApiResponse({ status: 404, description: 'Notificação não encontrada' })
-  async findById(@Param('id') id: string) {
-    return this.notificationsService.findById(id);
+  async findById(@Param('id') id: string, @Request() req: any) {
+    return this.notificationsService.findById(id, req.user);
   }
 
   @Patch(':id/read')
@@ -146,8 +154,8 @@ export class NotificationsController {
       }
     }
   })
-  async markAsRead(@Param('id') id: string) {
-    return this.notificationsService.markAsRead(id);
+  async markAsRead(@Param('id') id: string, @Request() req: any) {
+    return this.notificationsService.markAsRead(id, req.user);
   }
 
   @Patch('me/read-all')
@@ -166,7 +174,7 @@ export class NotificationsController {
     }
   })
   async markAllAsRead(@Request() req: any) {
-    return this.notificationsService.markAllAsRead(req.user);
+    return this.notificationsService.markAllAsRead(req.user.sub);
   }
 
   @Delete(':id')
@@ -177,7 +185,7 @@ export class NotificationsController {
     description: 'Notificação deletada com sucesso',
   })
   @ApiResponse({ status: 404, description: 'Notificação não encontrada' })
-  async delete(@Param('id') id: string) {
-    return this.notificationsService.delete(id);
+  async delete(@Param('id') id: string, @Request() req: any) {
+    return this.notificationsService.delete(id, req.user);
   }
 }

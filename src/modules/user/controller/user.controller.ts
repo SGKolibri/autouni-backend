@@ -7,14 +7,17 @@ import {
   Put,
   Delete,
   UseGuards,
+  Request,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
 import { UserService } from '../service/user.service';
 import { CreateUserDto } from '../dto/create-user.dto';
 import { UpdateUserDto } from '../dto/update-user.dto';
 import { AuthGuard } from 'src/guards/auth.guard';
+import { RolesGuard } from 'src/common/auth/roles.guard';
+import { ADMINS, MANAGERS, Roles } from 'src/common/auth/roles';
 
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, RolesGuard)
 @ApiBearerAuth('JWT-auth')
 @ApiTags('Users')
 @Controller('users')
@@ -22,6 +25,7 @@ export class UserController {
   constructor(private readonly service: UserService) {}
 
   @Post()
+  @Roles(...ADMINS)
   @ApiOperation({ 
     summary: 'Cria um novo usuário',
     description: 'Cria um novo usuário no sistema com role específico'
@@ -57,6 +61,7 @@ export class UserController {
   }
 
   @Get()
+  @Roles(...MANAGERS)
   @ApiOperation({ 
     summary: 'Lista todos os usuários',
     description: 'Retorna um array com todos os usuários cadastrados no sistema'
@@ -123,8 +128,8 @@ export class UserController {
       }
     }
   })
-  findOne(@Param('id') id: string) {
-    return this.service.findOne(id);
+  findOne(@Param('id') id: string, @Request() req: any) {
+    return this.service.findOne(id, req.user);
   }
 
   @Put(':id')
@@ -158,11 +163,12 @@ export class UserController {
       }
     }
   })
-  update(@Param('id') id: string, @Body() dto: UpdateUserDto) {
-    return this.service.update(id, dto);
+  update(@Param('id') id: string, @Body() dto: UpdateUserDto, @Request() req: any) {
+    return this.service.update(id, dto, req.user);
   }
 
   @Delete(':id')
+  @Roles(...ADMINS)
   @ApiOperation({ 
     summary: 'Remove um usuário pelo ID',
     description: 'Remove permanentemente um usuário do sistema'

@@ -174,7 +174,7 @@ export class ReportGenerationService implements OnModuleInit {
       orderBy: { timestamp: 'asc' },
     });
 
-    const headers = ['Timestamp', 'Prédio', 'Andar', 'Sala', 'Dispositivo', 'Tipo', 'Valor (Wh)', 'kWh', 'Tensão (V)', 'Corrente (A)'];
+    const headers = ['Timestamp', 'Prédio', 'Andar', 'Sala', 'Dispositivo', 'Tipo', 'Energia do intervalo (Wh)', 'kWh', 'Potência (W)', 'Tensão (V)', 'Corrente (A)'];
     const rows = readings.map((r) => [
       new Date(r.timestamp).toLocaleString('pt-BR'),
       r.device.room.floor.building.name,
@@ -182,8 +182,9 @@ export class ReportGenerationService implements OnModuleInit {
       r.device.room.name,
       r.device.name,
       r.device.type,
-      r.valueWh.toFixed(2),
-      (r.valueWh / 1000).toFixed(4),
+      r.energyWh.toFixed(2),
+      (r.energyWh / 1000).toFixed(4),
+      r.powerW?.toFixed(1) ?? '-',
       r.voltage?.toFixed(2) ?? '-',
       r.current?.toFixed(2) ?? '-',
     ]);

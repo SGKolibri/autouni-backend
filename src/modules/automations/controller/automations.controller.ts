@@ -12,6 +12,7 @@ import {
   ParseUUIDPipe,
   Patch,
   UseGuards,
+  Request,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -28,8 +29,10 @@ import {
   ToggleAutomationDto,
 } from '../dto/automations.dto';
 import { AuthGuard } from '../../../guards/auth.guard';
+import { RolesGuard } from '../../../common/auth/roles.guard';
+import { OPERATORS, Roles } from '../../../common/auth/roles';
 
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, RolesGuard)
 @ApiBearerAuth('JWT-auth')
 @ApiTags('Automations')
 @Controller('automations')
@@ -37,6 +40,7 @@ export class AutomationsController {
   constructor(private readonly automationsService: AutomationsService) {}
 
   @Post()
+  @Roles(...OPERATORS)
   @ApiOperation({ 
     summary: 'Create a new automation',
     description: 'Cria uma nova automação com gatilhos e ações configuráveis'
@@ -74,8 +78,9 @@ export class AutomationsController {
     }
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async create(@Body() createAutomationDto: CreateAutomationDto) {
-    return this.automationsService.create(createAutomationDto);
+  async create(@Body() createAutomationDto: CreateAutomationDto, @Request() req: any) {
+    // O criador é quem está autenticado, não o que o cliente declara.
+    return this.automationsService.create({ ...createAutomationDto, creatorId: req.user.sub });
   }
 
   @Get()
@@ -193,6 +198,7 @@ export class AutomationsController {
   }
 
   @Put(':id')
+  @Roles(...OPERATORS)
   @ApiOperation({ summary: 'Update automation' })
   @ApiParam({ name: 'id', description: 'Automation ID', type: String })
   @ApiResponse({ status: 200, description: 'Automation updated successfully' })
@@ -207,6 +213,7 @@ export class AutomationsController {
   }
 
   @Patch(':id/toggle')
+  @Roles(...OPERATORS)
   @ApiOperation({ summary: 'Enable or disable automation' })
   @ApiParam({ name: 'id', description: 'Automation ID', type: String })
   @ApiResponse({ status: 200, description: 'Automation toggled successfully' })
@@ -220,6 +227,7 @@ export class AutomationsController {
   }
 
   @Post(':id/execute')
+  @Roles(...OPERATORS)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ 
     summary: 'Manually execute automation',
@@ -268,6 +276,7 @@ export class AutomationsController {
   }
 
   @Delete(':id')
+  @Roles(...OPERATORS)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete automation' })
   @ApiParam({ name: 'id', description: 'Automation ID', type: String })

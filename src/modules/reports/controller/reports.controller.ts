@@ -30,6 +30,8 @@ import { CreateReportDto } from '../dto/create-report.dto';
 import { UpdateReportDto } from '../dto/update-report.dto';
 import { UpdateReportStatusDto } from '../dto/update-report-status.dto';
 import { AuthGuard } from '../../../guards/auth.guard';
+import { RolesGuard } from '../../../common/auth/roles.guard';
+import { ADMINS, MANAGERS, OPERATORS, Roles } from '../../../common/auth/roles';
 
 const REPORT_EXAMPLE = {
   id: 'uuid-report-123',
@@ -64,12 +66,13 @@ const BAD_REQUEST_EXAMPLE = {
 
 @ApiTags('Reports')
 @ApiBearerAuth('JWT-auth')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, RolesGuard)
 @Controller('reports')
 export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}
 
   @Post()
+  @Roles(...OPERATORS)
   @ApiOperation({
     summary: 'Criar novo relatório',
     description:
@@ -86,8 +89,9 @@ export class ReportsController {
     description: 'Dados inválidos',
     schema: { example: BAD_REQUEST_EXAMPLE },
   })
-  async create(@Body() createReportDto: CreateReportDto) {
-    return this.reportsService.create(createReportDto);
+  async create(@Body() createReportDto: CreateReportDto, @Request() req: any) {
+    // O autor é quem está autenticado, não o que o cliente declara.
+    return this.reportsService.create({ ...createReportDto, createdById: req.user.sub });
   }
 
   @Get()
@@ -109,7 +113,7 @@ export class ReportsController {
     schema: { example: [REPORT_EXAMPLE] },
   })
   async findMyReports(@Request() req: any) {
-    return this.reportsService.findByCreator(req.user);
+    return this.reportsService.findByCreator(req.user.sub);
   }
 
   @Get('type/:type')
@@ -230,6 +234,7 @@ export class ReportsController {
   }
 
   @Put(':id')
+  @Roles(...OPERATORS)
   @ApiOperation({ summary: 'Atualizar relatório' })
   @ApiParam({ name: 'id', description: 'ID do relatório (UUID)', type: String })
   @ApiResponse({
@@ -250,6 +255,7 @@ export class ReportsController {
   }
 
   @Patch(':id/status')
+  @Roles(...ADMINS)
   @ApiOperation({ summary: 'Atualizar status do relatório' })
   @ApiParam({ name: 'id', description: 'ID do relatório (UUID)', type: String })
   @ApiResponse({
@@ -274,6 +280,7 @@ export class ReportsController {
   }
 
   @Delete(':id')
+  @Roles(...MANAGERS)
   @ApiOperation({ summary: 'Deletar relatório' })
   @ApiParam({ name: 'id', description: 'ID do relatório (UUID)', type: String })
   @ApiResponse({

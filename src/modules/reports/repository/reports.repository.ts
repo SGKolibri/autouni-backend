@@ -6,6 +6,7 @@ import {
   CreateReportData,
   UpdateReportData,
 } from '../interfaces/reports.interface';
+import { withTenant } from '../../../common/tenant/tenant-context';
 
 @Injectable()
 export class ReportsRepository implements IReportsRepository {
@@ -13,7 +14,7 @@ export class ReportsRepository implements IReportsRepository {
 
   async create(data: CreateReportData): Promise<Report> {
     return this.prisma.report.create({
-      data,
+      data: withTenant(data),
     });
   }
 

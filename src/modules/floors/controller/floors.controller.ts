@@ -19,6 +19,8 @@ import { FloorsService } from '../service/floors.service';
 import { CreateFloorDto } from '../dto/create-floor.dto';
 import { UpdateFloorDto } from '../dto/update-floor.dto';
 import { AuthGuard } from '../../../guards/auth.guard';
+import { RolesGuard } from '../../../common/auth/roles.guard';
+import { MANAGERS, Roles } from '../../../common/auth/roles';
 
 const FLOOR_EXAMPLE = {
   id: 'uuid-floor-1',
@@ -55,12 +57,13 @@ const BAD_REQUEST_EXAMPLE = {
 
 @ApiTags('Floors')
 @ApiBearerAuth('JWT-auth')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, RolesGuard)
 @Controller('floors')
 export class FloorsController {
   constructor(private readonly floorsService: FloorsService) {}
 
   @Post()
+  @Roles(...MANAGERS)
   @ApiOperation({ summary: 'Criar novo andar' })
   @ApiResponse({
     status: 201,
@@ -134,6 +137,7 @@ export class FloorsController {
   }
 
   @Put(':id')
+  @Roles(...MANAGERS)
   @ApiOperation({ summary: 'Atualizar andar' })
   @ApiParam({ name: 'id', description: 'ID do andar (UUID)', type: String })
   @ApiResponse({
@@ -154,6 +158,7 @@ export class FloorsController {
   }
 
   @Delete(':id')
+  @Roles(...MANAGERS)
   @ApiOperation({ summary: 'Deletar andar' })
   @ApiParam({ name: 'id', description: 'ID do andar (UUID)', type: String })
   @ApiResponse({

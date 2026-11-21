@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Automation, AutomationHistory, TriggerType as PrismaTriggerType } from '@prisma/client';
+import { Automation, AutomationHistory, SensorKind, TriggerType as PrismaTriggerType } from '@prisma/client';
 import { PrismaService } from '../../../../prisma/prisma.service';
 import {
   IAutomationRepository,
@@ -7,6 +7,7 @@ import {
   CreateAutomationDto,
   UpdateAutomationDto,
 } from '../interfaces/automations.interface';
+import { withTenant } from '../../../common/tenant/tenant-context';
 
 @Injectable()
 export class AutomationsRepository implements IAutomationRepository {
@@ -14,7 +15,7 @@ export class AutomationsRepository implements IAutomationRepository {
 
   async create(data: CreateAutomationDto): Promise<Automation> {
     return this.prisma.automation.create({
-      data: {
+      data: withTenant({
         name: data.name,
         description: data.description,
         creatorId: data.creatorId,
@@ -23,7 +24,7 @@ export class AutomationsRepository implements IAutomationRepository {
         condition: data.condition,
         action: typeof data.action === 'string' ? data.action : JSON.stringify(data.action),
         enabled: data.enabled ?? true,
-      },
+      }),
       include: {
         creator: {
           select: {
@@ -198,11 +199,11 @@ export class AutomationsRepository implements IAutomationRepository {
     logs?: string;
   }): Promise<AutomationHistory> {
     return this.prisma.automationHistory.create({
-      data: {
+      data: withTenant({
         automationId: data.automationId,
         success: data.success,
         logs: data.logs,
-      },
+      }),
     });
   }
 
@@ -213,6 +214,35 @@ export class AutomationsRepository implements IAutomationRepository {
         runAt: 'desc',
       },
       take: limit,
+    });
+  }
+
+  async setConditionState(id: string, conditionState: boolean): Promise<void> {
+    await this.prisma.automation.update({ where: { id }, data: { conditionState } });
+  }
+
+  // Referências usadas por condições e ações; o escopo de tenant garante que
+  // só se enxerga sala/device da própria organização.
+  findRoom(id: string) {
+    return this.prisma.room.findUnique({
+      where: { id },
+      select: { id: true, occupied: true, occupancyChangedAt: true },
+    });
+  }
+
+  findDevice(id: string) {
+    return this.prisma.device.findUnique({ where: { id }, select: { id: true, mqttTopic: true } });
+  }
+
+  findDeviceByTopic(mqttTopic: string) {
+    return this.prisma.device.findFirst({ where: { mqttTopic }, select: { id: true } });
+  }
+
+  findLatestSensorReading(deviceId: string, kind: SensorKind) {
+    return this.prisma.sensorReading.findFirst({
+      where: { deviceId, kind },
+      orderBy: { timestamp: 'desc' },
+      select: { value: true, timestamp: true },
     });
   }
 }

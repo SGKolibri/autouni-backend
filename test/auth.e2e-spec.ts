@@ -73,9 +73,12 @@ describe('Auth Module (e2e)', () => {
   // ============================================================
   // POST /auth/login
   // ============================================================
+  // Login procura o e-mail em todas as organizações (findMany com a organização).
+  const LOGIN_USER = { ...MOCK_USER, organizationId: 'org-1', organization: { id: 'org-1', slug: 'default', name: 'Default' } };
+
   describe('POST /auth/login', () => {
     it('should return 200 with tokens and user on valid credentials', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(MOCK_USER);
+      mockPrisma.user.findMany.mockResolvedValue([LOGIN_USER]);
       mockPrisma.refreshToken.create.mockResolvedValue(undefined);
 
       const response = await request(app.getHttpServer())
@@ -92,7 +95,7 @@ describe('Auth Module (e2e)', () => {
     });
 
     it('should return 401 when email does not exist', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(null);
+      mockPrisma.user.findMany.mockResolvedValue([]);
 
       await request(app.getHttpServer())
         .post('/auth/login')
@@ -101,7 +104,7 @@ describe('Auth Module (e2e)', () => {
     });
 
     it('should return 401 when user has no password', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(MOCK_USER_WITHOUT_PASSWORD);
+      mockPrisma.user.findMany.mockResolvedValue([{ ...LOGIN_USER, ...MOCK_USER_WITHOUT_PASSWORD }]);
 
       await request(app.getHttpServer())
         .post('/auth/login')
@@ -110,7 +113,7 @@ describe('Auth Module (e2e)', () => {
     });
 
     it('should return 401 when password is incorrect', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(MOCK_USER);
+      mockPrisma.user.findMany.mockResolvedValue([LOGIN_USER]);
 
       await request(app.getHttpServer())
         .post('/auth/login')
@@ -152,18 +155,55 @@ describe('Auth Module (e2e)', () => {
         .send({ ...VALID_LOGIN_DTO, hacker: true })
         .expect(400);
     });
+
+    it('should ask for the organization when the password matches in two organizations', async () => {
+      const twin = { ...LOGIN_USER, id: 'user-2', organizationId: 'org-2', organization: { id: 'org-2', slug: 'campus-2', name: 'Campus 2' } };
+      mockPrisma.user.findMany.mockResolvedValue([LOGIN_USER, twin]);
+
+      const response = await request(app.getHttpServer()).post('/auth/login').send(VALID_LOGIN_DTO).expect(400);
+      expect(response.body.organizations.map((o: any) => o.slug)).toEqual(['default', 'campus-2']);
+    });
+
+    it('should sign an access token that carries the organization', async () => {
+      mockPrisma.user.findMany.mockResolvedValue([LOGIN_USER]);
+      const response = await request(app.getHttpServer()).post('/auth/login').send(VALID_LOGIN_DTO).expect(200);
+      const payload = jwtService.decode(response.body.accessToken) as any;
+      expect(payload).toMatchObject({ orgId: 'org-1', typ: 'access' });
+    });
   });
 
   // ============================================================
   // POST /auth/register
   // ============================================================
   describe('POST /auth/register', () => {
+    // Cadastro é restrito a ADMIN autenticado.
+    let adminToken: string;
+    beforeAll(() => {
+      adminToken = generateTestToken(jwtService, { role: 'ADMIN' });
+    });
+    const register = () => request(app.getHttpServer()).post('/auth/register').set('Authorization', `Bearer ${adminToken}`);
+
+    it('should return 401 without a token', async () => {
+      await request(app.getHttpServer()).post('/auth/register').send(VALID_REGISTER_DTO).expect(401);
+    });
+
+    it('should return 403 for a non-ADMIN', async () => {
+      const viewer = generateTestToken(jwtService, { role: 'VIEWER' });
+      await register()
+        .set('Authorization', `Bearer ${viewer}`)
+        .send(VALID_REGISTER_DTO)
+        .expect(403);
+    });
+
+    it('should return 400 when the client tries to choose the role', async () => {
+      await register().send({ ...VALID_REGISTER_DTO, role: 'ADMIN' }).expect(400);
+    });
+
     it('should return 201 with user data on valid registration (required fields)', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(null);
+      mockPrisma.user.findFirst.mockResolvedValue(null);
       mockPrisma.user.create.mockResolvedValue(MOCK_USER);
 
-      const response = await request(app.getHttpServer())
-        .post('/auth/register')
+      const response = await register()
         .send(VALID_REGISTER_DTO)
         .expect(201);
 
@@ -173,11 +213,12 @@ describe('Auth Module (e2e)', () => {
       const createArg = mockPrisma.user.create.mock.calls[0][0];
       expect(createArg.data.password).not.toBe(VALID_REGISTER_DTO.password);
       expect(createArg.data.password).toMatch(/^\$2[aby]?\$/);
+      expect(createArg.data.role).toBe('VIEWER');
     });
 
     it('should return 201 with all optional fields', async () => {
       // findUserByEmail returns null
-      mockPrisma.user.findUnique
+      mockPrisma.user.findFirst
         .mockResolvedValueOnce(null)  // findUserByEmail
         .mockResolvedValueOnce(null); // findUserByCpf
       mockPrisma.user.create.mockResolvedValue({
@@ -185,8 +226,7 @@ describe('Auth Module (e2e)', () => {
         ...VALID_REGISTER_DTO_FULL,
       });
 
-      const response = await request(app.getHttpServer())
-        .post('/auth/register')
+      const response = await register()
         .send(VALID_REGISTER_DTO_FULL)
         .expect(201);
 
@@ -194,73 +234,59 @@ describe('Auth Module (e2e)', () => {
     });
 
     it('should return 409 when email already exists', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(MOCK_USER);
+      mockPrisma.user.findFirst.mockResolvedValue(MOCK_USER);
 
-      await request(app.getHttpServer())
-        .post('/auth/register')
+      await register()
         .send(VALID_REGISTER_DTO)
         .expect(409);
     });
 
     it('should return 409 when CPF already exists', async () => {
-      mockPrisma.user.findUnique
+      mockPrisma.user.findFirst
         .mockResolvedValueOnce(null)   // findUserByEmail
         .mockResolvedValueOnce(MOCK_USER); // findUserByCpf
 
-      await request(app.getHttpServer())
-        .post('/auth/register')
+      await register()
         .send(VALID_REGISTER_DTO_FULL)
         .expect(409);
     });
 
     it('should return 400 when name is missing', async () => {
-      await request(app.getHttpServer())
-        .post('/auth/register')
+      await register()
         .send({ email: 'joao@email.com', password: 'password123' })
         .expect(400);
     });
 
     it('should return 400 when email is missing', async () => {
-      await request(app.getHttpServer())
-        .post('/auth/register')
+      await register()
         .send({ name: 'Joao', password: 'password123' })
         .expect(400);
     });
 
     it('should return 400 when email format is invalid', async () => {
-      await request(app.getHttpServer())
-        .post('/auth/register')
+      await register()
         .send({ name: 'Joao', email: 'not-email', password: 'password123' })
         .expect(400);
     });
 
     it('should return 400 when password is missing', async () => {
-      await request(app.getHttpServer())
-        .post('/auth/register')
+      await register()
         .send({ name: 'Joao', email: 'joao@email.com' })
         .expect(400);
     });
 
     it('should return 400 when password is too short', async () => {
-      await request(app.getHttpServer())
-        .post('/auth/register')
+      await register()
         .send({ name: 'Joao', email: 'joao@email.com', password: '123' })
         .expect(400);
     });
 
     it('should return 400 when cpf format is invalid', async () => {
-      await request(app.getHttpServer())
-        .post('/auth/register')
+      await register()
         .send({ ...VALID_REGISTER_DTO, cpf: 'abc123' })
         .expect(400);
     });
 
-    it('should return 400 when role is an invalid enum value', async () => {
-      await request(app.getHttpServer())
-        .post('/auth/register')
-        .send({ ...VALID_REGISTER_DTO, role: 'SUPERUSER' })
-        .expect(400);
-    });
   });
 
   // ============================================================
@@ -273,6 +299,8 @@ describe('Auth Module (e2e)', () => {
         sub: MOCK_USER.id,
         role: MOCK_USER.role,
         name: MOCK_USER.name,
+        orgId: 'org-1',
+        typ: 'refresh',
       };
       const refreshToken = jwtService.sign(payload, { expiresIn: '7d' });
       const tokenHash = bcrypt.hashSync(refreshToken, 10);
@@ -295,6 +323,11 @@ describe('Auth Module (e2e)', () => {
       expect(typeof response.body.accessToken).toBe('string');
     });
 
+    it('should return 401 when an access token is sent as refresh token', async () => {
+      const accessToken = generateTestToken(jwtService);
+      await request(app.getHttpServer()).post('/auth/refresh').send({ refreshToken: accessToken }).expect(401);
+    });
+
     it('should return 401 when refresh token is not a valid JWT', async () => {
       await request(app.getHttpServer())
         .post('/auth/refresh')
@@ -308,6 +341,8 @@ describe('Auth Module (e2e)', () => {
         sub: MOCK_USER.id,
         role: MOCK_USER.role,
         name: MOCK_USER.name,
+        orgId: 'org-1',
+        typ: 'refresh',
       };
       const refreshToken = jwtService.sign(payload, { expiresIn: '7d' });
 
@@ -325,6 +360,8 @@ describe('Auth Module (e2e)', () => {
         sub: MOCK_USER.id,
         role: MOCK_USER.role,
         name: MOCK_USER.name,
+        orgId: 'org-1',
+        typ: 'refresh',
       };
       const refreshToken = jwtService.sign(payload, { expiresIn: '7d' });
 
@@ -348,6 +385,8 @@ describe('Auth Module (e2e)', () => {
         sub: MOCK_USER.id,
         role: MOCK_USER.role,
         name: MOCK_USER.name,
+        orgId: 'org-1',
+        typ: 'refresh',
       };
       const refreshToken = jwtService.sign(payload, { expiresIn: '7d' });
       const tokenHash = bcrypt.hashSync(refreshToken, 10);

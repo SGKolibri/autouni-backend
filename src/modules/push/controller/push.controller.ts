@@ -15,6 +15,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { AuthGuard } from '../../../guards/auth.guard';
+import { RolesGuard } from '../../../common/auth/roles.guard';
 import { PushService } from '../service/push.service';
 import {
   RegisterPushTokenDto,
@@ -23,7 +24,7 @@ import {
 
 @ApiTags('Push')
 @ApiBearerAuth('JWT-auth')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, RolesGuard)
 @Controller('push/tokens')
 export class PushController {
   constructor(private readonly pushService: PushService) {}

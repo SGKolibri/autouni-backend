@@ -6,6 +6,20 @@ export interface EnergyAggregation {
   avgWh?: number;
   maxWh?: number;
   minWh?: number;
+  avgPowerW?: number;
+  maxPowerW?: number;
+}
+
+export interface EnergyReadingInput {
+  deviceId: string;
+  energyWh: number;
+  energyTotalWh?: number | null;
+  powerW?: number | null;
+  voltage?: number | null;
+  current?: number | null;
+  frequency?: number | null;
+  powerFactor?: number | null;
+  timestamp?: Date;
 }
 
 export interface EnergyQueryParams {
@@ -53,12 +67,7 @@ export type ComparisonLevel = 'general' | 'building' | 'floor' | 'room';
 export type ScopeLevel = 'general' | 'building' | 'floor' | 'room' | 'device';
 
 export interface IEnergyRepository {
-  createReading(data: {
-    deviceId: string;
-    valueWh: number;
-    voltage?: number | null;
-    current?: number | null;
-  }): Promise<EnergyReading>;
+  createReading(data: EnergyReadingInput): Promise<EnergyReading>;
   
   findReadingsByDevice(
     deviceId: string,

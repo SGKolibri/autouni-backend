@@ -13,6 +13,7 @@ import {
 } from '../interfaces/devices.interface';
 import { CreateDeviceDto } from '../dto/create-device.dto';
 import { UpdateDeviceDto } from '../dto/update-device.dto';
+import { withTenant } from '../../../common/tenant/tenant-context';
 
 /**
  * Campos aceitos pelos DTOs que NÃO são colunas do model `Device`.
@@ -68,11 +69,11 @@ export class DevicesRepository implements IDeviceRepository {
     const { columns, metadata } = this.splitDeviceFields(data);
 
     return this.prisma.device.create({
-      data: {
-        ...(columns as Prisma.DeviceUncheckedCreateInput),
+      data: withTenant({
+        ...(columns as Omit<Prisma.DeviceUncheckedCreateInput, 'organizationId'>),
         status: data.status as PrismaDeviceStatus,
         ...(metadata !== undefined ? { metadata } : {}),
-      },
+      }),
       include: {
         room: {
           include: {

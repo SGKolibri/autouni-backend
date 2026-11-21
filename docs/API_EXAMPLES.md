@@ -147,7 +147,7 @@ Authorization: Bearer <token>
 
 {
   "deviceId": "uuid-device-123",
-  "valueWh": 150.5,
+  "energyWh": 150.5,
   "voltage": 220,
   "current": 0.68
 }
@@ -255,7 +255,7 @@ or simply: `"ON"`, `"OFF"`, `"STANDBY"`, `"ERROR"`
 **Payload:**
 ```json
 {
-  "valueWh": 150.5,
+  "energyWh": 150.5,
   "voltage": 220,
   "current": 0.68
 }
@@ -348,7 +348,7 @@ socket.on('mqtt.raw', (data) => {
 
 ### Energy Reading
 - `deviceId`: Required, UUID
-- `valueWh`: Required, positive number
+- `energyWh` (Wh do intervalo), `energyTotalWh` (contador do medidor) ou `powerW`: pelo menos um é obrigatório; todos ≥ 0
 - `voltage`: Optional, number >= 0
 - `current`: Optional, number >= 0
 

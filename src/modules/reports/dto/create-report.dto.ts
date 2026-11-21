@@ -1,11 +1,12 @@
 import {
+  IsOptional,
   IsString,
   IsEnum,
   IsUUID,
   IsObject,
   MinLength,
 } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ReportType, ReportFormat } from '@prisma/client';
 
 export class CreateReportDto {
@@ -44,10 +45,11 @@ export class CreateReportDto {
   @IsObject()
   filters: any;
 
-  @ApiProperty({
-    description: 'ID do usuário criador do relatório',
+  @ApiPropertyOptional({
+    description: 'Ignorado: o autor é sempre o usuário autenticado. Aceito por compatibilidade.',
     example: 'uuid-do-usuario',
   })
+  @IsOptional()
   @IsUUID()
-  createdById: string;
+  createdById?: string;
 }

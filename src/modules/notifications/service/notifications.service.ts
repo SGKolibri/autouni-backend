@@ -1,4 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+
+type Actor = { sub: string; role: string };
 import { Notification } from '@prisma/client';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { NotificationsRepository } from '../repository/notifications.repository';
@@ -27,10 +29,14 @@ export class NotificationsService {
     return this.notificationsRepository.findAll();
   }
 
-  async findById(id: string): Promise<Notification> {
+  // Notificação é pessoal: só o destinatário (ou um ADMIN) a vê ou altera.
+  async findById(id: string, actor?: Actor): Promise<Notification> {
     const notification = await this.notificationsRepository.findById(id);
     if (!notification) {
       throw new NotFoundException(`Notification with ID ${id} not found`);
+    }
+    if (actor && actor.role !== 'ADMIN' && notification.userId !== actor.sub) {
+      throw new ForbiddenException('Esta notificação não é sua');
     }
     return notification;
   }
@@ -43,8 +49,8 @@ export class NotificationsService {
     return this.notificationsRepository.findUnreadByUser(userId);
   }
 
-  async markAsRead(id: string): Promise<Notification> {
-    await this.findById(id);
+  async markAsRead(id: string, actor?: Actor): Promise<Notification> {
+    await this.findById(id, actor);
     return this.notificationsRepository.markAsRead(id);
   }
 
@@ -53,8 +59,8 @@ export class NotificationsService {
     return { count };
   }
 
-  async delete(id: string): Promise<Notification> {
-    await this.findById(id);
+  async delete(id: string, actor?: Actor): Promise<Notification> {
+    await this.findById(id, actor);
     return this.notificationsRepository.delete(id);
   }
 }

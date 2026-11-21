@@ -20,6 +20,8 @@ import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../../../guards/auth.guard';
 import { Public } from '../decorators/public.decorator';
 import { RefreshTokenDto } from '../dto/refresh-token.dto';
+import { RolesGuard } from '../../../common/auth/roles.guard';
+import { ADMINS, Roles } from '../../../common/auth/roles';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -66,12 +68,16 @@ export class AuthController {
     return this.authService.login(loginDto);
   }
 
-  @Public()
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(...ADMINS)
+  @ApiBearerAuth('JWT-auth')
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post('register')
   @ApiOperation({ 
-    summary: 'Registra um novo usuário',
-    description: 'Cria uma nova conta de usuário no sistema'
+    summary: 'Cadastra um usuário (somente ADMIN)',
+    description:
+      'Cria uma conta VIEWER na organização do ADMIN autenticado. O papel não é aceito aqui: ' +
+      'para promover, use PUT /users/:id.'
   })
   @ApiResponse({ 
     status: 201, 
@@ -98,6 +104,7 @@ export class AuthController {
       }
     }
   })
+  @ApiResponse({ status: 403, description: 'Somente ADMIN cadastra usuários.' })
   async register(@Body() registerDto: RegisterDto) {
     return this.authService.register(registerDto);
   }

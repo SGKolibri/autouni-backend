@@ -7,6 +7,7 @@ import { AutomationsController } from '../src/modules/automations/controller/aut
 import { AutomationsService } from '../src/modules/automations/service/automations.service';
 import { AutomationsRepository } from '../src/modules/automations/repository/automations.repository';
 import { MqttService } from '../src/modules/mqtt/service/mqtt.service';
+import { DevicesService } from '../src/modules/devices/service/devices.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TEST_JWT_SECRET, generateTestToken } from './helpers/test-auth.helper';
 
@@ -56,6 +57,11 @@ describe('Automations Module (e2e)', () => {
         create: jest.fn(),
         findMany: jest.fn(),
       },
+      // Ações só podem mirar devices da organização; aqui eles existem.
+      device: {
+        findUnique: jest.fn().mockResolvedValue({ id: VALID_UUID, mqttTopic: 'devices/lights' }),
+        findFirst: jest.fn().mockResolvedValue({ id: VALID_UUID }),
+      },
       $connect: jest.fn(),
       $disconnect: jest.fn(),
     };
@@ -83,6 +89,7 @@ describe('Automations Module (e2e)', () => {
         AutomationsService,
         AutomationsRepository,
         { provide: MqttService, useValue: mockMqttService },
+        { provide: DevicesService, useValue: { control: jest.fn() } },
         { provide: PrismaService, useValue: mockPrisma },
       ],
     }).compile();
@@ -131,7 +138,7 @@ describe('Automations Module (e2e)', () => {
       const response = await request(app.getHttpServer())
         .post('/automations')
         .set('Authorization', `Bearer ${authToken}`)
-        .send({ name: 'Manual Automation', triggerType: 'MANUAL', action: { topic: 'test' } })
+        .send({ name: 'Manual Automation', triggerType: 'MANUAL', action: { topic: 'devices/test/command' } })
         .expect(201);
 
       expect(response.body).toHaveProperty('triggerType', 'MANUAL');

@@ -19,15 +19,18 @@ import { BuildingsService } from '../service/buildings.service';
 import { CreateBuildingDto } from '../dto/create-building.dto';
 import { UpdateBuildingDto } from '../dto/update-building.dto';
 import { AuthGuard } from '../../../guards/auth.guard';
+import { RolesGuard } from '../../../common/auth/roles.guard';
+import { MANAGERS, Roles } from '../../../common/auth/roles';
 
 @ApiTags('Buildings')
 @ApiBearerAuth('JWT-auth')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, RolesGuard)
 @Controller('buildings')
 export class BuildingsController {
   constructor(private readonly buildingsService: BuildingsService) {}
 
   @Post()
+  @Roles(...MANAGERS)
   @ApiOperation({ 
     summary: 'Criar novo prédio',
     description: 'Cria um novo prédio no sistema de gerenciamento'
@@ -132,6 +135,7 @@ export class BuildingsController {
   }
 
   @Put(':id')
+  @Roles(...MANAGERS)
   @ApiOperation({ summary: 'Atualizar prédio' })
   @ApiParam({ name: 'id', description: 'ID do prédio' })
   @ApiResponse({ status: 200, description: 'Prédio atualizado com sucesso' })
@@ -144,6 +148,7 @@ export class BuildingsController {
   }
 
   @Delete(':id')
+  @Roles(...MANAGERS)
   @ApiOperation({ summary: 'Deletar prédio' })
   @ApiParam({ name: 'id', description: 'ID do prédio' })
   @ApiResponse({ status: 200, description: 'Prédio deletado com sucesso' })

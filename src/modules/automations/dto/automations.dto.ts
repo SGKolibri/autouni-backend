@@ -30,7 +30,7 @@ export class CreateAutomationDto {
   @IsString()
   description?: string;
 
-  @ApiPropertyOptional({ description: 'Creator user ID' })
+  @ApiPropertyOptional({ description: 'Ignorado: o criador é sempre o usuário autenticado' })
   @IsOptional()
   @IsString()
   creatorId?: string;
@@ -53,16 +53,20 @@ export class CreateAutomationDto {
   cron?: string;
 
   @ApiPropertyOptional({ 
-    description: 'Condition expression for CONDITION trigger type',
-    example: 'temperature > 25'
+    description:
+      'Condição JSON para CONDITION: {"type":"occupancy","roomId","occupied","forSeconds"} ou ' +
+      '{"type":"sensor","deviceId","kind","op":"gt|gte|lt|lte","value","maxAgeSeconds"}',
+    example: '{"type":"occupancy","roomId":"uuid-sala","occupied":false,"forSeconds":600}'
   })
   @IsOptional()
   @IsString()
   condition?: string;
 
   @ApiProperty({ 
-    description: 'Action to execute (JSON string or object)',
-    example: { topic: 'devices/light/command', payload: { state: 'OFF' } }
+    description:
+      'Ação (JSON ou objeto): {"deviceId","command":"on|off|toggle","intensity"?,"temperature"?} ' +
+      'ou {"topic":"devices/<slug>/command","payload"} de um device da organização',
+    example: { deviceId: 'uuid-device', command: 'off' }
   })
   @IsNotEmpty()
   action: string | AutomationActionDto;

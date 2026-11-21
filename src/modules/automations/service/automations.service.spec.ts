@@ -4,6 +4,7 @@ import { AutomationsService } from './automations.service';
 import { AutomationsRepository } from '../repository/automations.repository';
 import { MqttService } from '../../mqtt/service/mqtt.service';
 import { TriggerType } from '../interfaces/automations.interface';
+import { DevicesService } from '../../devices/service/devices.service';
 
 jest.mock('cron-parser', () => ({
   CronExpressionParser: {
@@ -58,7 +59,17 @@ describe('AutomationsService', () => {
             updateLastRun: jest.fn(),
             createHistory: jest.fn(),
             findHistory: jest.fn(),
+            setConditionState: jest.fn(),
+            // Referências de ação/condição existem na organização por padrão.
+            findDevice: jest.fn().mockResolvedValue({ id: 'device-uuid-1', mqttTopic: 'devices/lights' }),
+            findDeviceByTopic: jest.fn().mockResolvedValue({ id: 'device-uuid-1' }),
+            findRoom: jest.fn().mockResolvedValue({ id: 'room-uuid-1', occupied: false, occupancyChangedAt: null }),
+            findLatestSensorReading: jest.fn().mockResolvedValue(null),
           },
+        },
+        {
+          provide: DevicesService,
+          useValue: { control: jest.fn() },
         },
         {
           provide: MqttService,
@@ -86,7 +97,7 @@ describe('AutomationsService', () => {
       const dto = {
         name: 'Test Automation',
         triggerType: TriggerType.MANUAL,
-        action: { topic: 'test/topic' },
+        action: { topic: 'devices/test/command' },
       };
       const result = await service.create(dto);
       expect(result).toEqual(mockAutomation);
@@ -98,7 +109,7 @@ describe('AutomationsService', () => {
         name: 'Scheduled Automation',
         triggerType: TriggerType.SCHEDULE,
         cron: '0 22 * * *',
-        action: '{"topic":"test"}',
+        action: '{"topic":"devices/test/command"}',
       };
       const result = await service.create(dto);
       expect(result).toEqual(mockAutomation);
@@ -108,7 +119,7 @@ describe('AutomationsService', () => {
       const dto = {
         name: 'Scheduled Automation',
         triggerType: TriggerType.SCHEDULE,
-        action: '{"topic":"test"}',
+        action: '{"topic":"devices/test/command"}',
       };
       await expect(service.create(dto)).rejects.toThrow(BadRequestException);
       expect(repository.create).not.toHaveBeenCalled();
@@ -119,7 +130,7 @@ describe('AutomationsService', () => {
         name: 'Scheduled Automation',
         triggerType: TriggerType.SCHEDULE,
         cron: 'not-a-valid-cron',
-        action: '{"topic":"test"}',
+        action: '{"topic":"devices/test/command"}',
       };
       await expect(service.create(dto)).rejects.toThrow(BadRequestException);
     });
@@ -129,7 +140,7 @@ describe('AutomationsService', () => {
       const dto = {
         name: 'Test Automation',
         triggerType: TriggerType.MANUAL,
-        action: { topic: 'test/topic', payload: { state: 'ON' } },
+        action: { topic: 'devices/test/command', payload: { state: 'ON' } },
       };
       await service.create(dto);
       expect(typeof dto.action).toBe('string');
@@ -201,7 +212,7 @@ describe('AutomationsService', () => {
       const updated = { ...mockAutomation };
       repository.findById.mockResolvedValue(mockAutomation as any);
       repository.update.mockResolvedValue(updated as any);
-      const dto: any = { action: { topic: 'new/topic' } };
+      const dto: any = { action: { topic: 'devices/test/command' } };
       await service.update('automation-uuid-1', dto);
       expect(typeof dto.action).toBe('string');
     });
@@ -293,6 +304,51 @@ describe('AutomationsService', () => {
       expect(stats.byTriggerType.schedule).toBe(1);
       expect(stats.byTriggerType.condition).toBe(1);
       expect(stats.byTriggerType.manual).toBe(1);
+    });
+  });
+
+  describe('CONDITION automations', () => {
+    const conditionAutomation = {
+      ...mockAutomation,
+      id: 'automation-cond-1',
+      triggerType: 'CONDITION',
+      cron: null,
+      condition: JSON.stringify({ type: 'sensor', deviceId: 'mq2', kind: 'GAS_MQ2', op: 'gte', value: 1800 }),
+      action: JSON.stringify({ deviceId: 'relay', command: 'on' }),
+      conditionState: false,
+      organizationId: 'org-1',
+    };
+
+    it('rejects a CONDITION automation without a structured condition', async () => {
+      await expect(
+        service.create({ name: 'x', triggerType: TriggerType.CONDITION, condition: 'temperature > 25', action: { deviceId: 'd', command: 'on' } } as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects an action that targets a device outside the organization', async () => {
+      (repository.findDevice as jest.Mock).mockResolvedValueOnce(null);
+      await expect(
+        service.create({ name: 'x', triggerType: TriggerType.MANUAL, action: { deviceId: 'other-org', command: 'on' } } as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('fires once on the false -> true edge and resets when the condition clears', async () => {
+      const devices = (service as any).devicesService as { control: jest.Mock };
+      repository.findByTriggerType.mockResolvedValue([conditionAutomation as any]);
+      (repository.findLatestSensorReading as jest.Mock).mockResolvedValue({ value: 1900, timestamp: new Date() });
+
+      await service.evaluateConditions('org-1');
+      expect(devices.control).toHaveBeenCalledWith('relay', expect.objectContaining({ command: 'on' }));
+      expect(repository.setConditionState).toHaveBeenCalledWith('automation-cond-1', true);
+
+      devices.control.mockClear();
+      repository.findByTriggerType.mockResolvedValue([{ ...conditionAutomation, conditionState: true } as any]);
+      await service.evaluateConditions('org-1');
+      expect(devices.control).not.toHaveBeenCalled();
+
+      (repository.findLatestSensorReading as jest.Mock).mockResolvedValue({ value: 1000, timestamp: new Date() });
+      await service.evaluateConditions('org-1');
+      expect(repository.setConditionState).toHaveBeenLastCalledWith('automation-cond-1', false);
     });
   });
 });

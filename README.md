@@ -78,7 +78,7 @@ O **AutoUni Backend** é uma API REST e WebSocket robusta e escalável para gere
 
 ### Monitoramento Energético
 - ✅ Registro de leituras (EnergyReading)
-- ✅ Campos: valueWh, voltage, current
+- ✅ Campos: energyWh (energia do intervalo, somada nas estatísticas), energyTotalWh, powerW, voltage, current, frequency, powerFactor
 - ✅ Agregação por dispositivo, sala, andar, prédio
 - ✅ Estatísticas: total, média, máximo, mínimo
 - ✅ Filtros por período (data inicial/final)
@@ -690,8 +690,16 @@ O backend se conecta automaticamente ao broker MQTT configurado em `MQTT_URL`.
 
 ```
 devices/+/status      # Status do dispositivo (ON/OFF/STANDBY/ERROR)
-devices/+/energy      # Leituras energéticas (valueWh, voltage, current)
+devices/+/energy      # Energia (powerW, energyTotalWh|energyWh, voltage, current, frequency, powerFactor)
+devices/+/sensor      # Gás (GAS_MQ2, GAS_MQ135) e presença (MOTION)
 devices/+/online      # Status de conexão (online/offline)
+nodes/+/online        # LWT do nó ESP32 (vale para todos os devices dele)
+```
+
+O broker não aceita conexão anônima: cada ESP32 usa a credencial emitida em `POST /nodes`.
+Contrato completo em [MQTT_SETUP.md](./MQTT_SETUP.md).
+
+```
 ```
 
 ### Publicação de Comandos
@@ -709,15 +717,13 @@ PAYLOAD: { "state": "ON", "temperature": 22 }
 ### Testes MQTT
 
 ```bash
-# Subscribe
-mosquitto_sub -h localhost -p 1883 -t 'devices/#' -v
+# Subscribe (como backend)
+mosquitto_sub -h localhost -p 1883 -u "$MQTT_USERNAME" -P "$MQTT_PASSWORD" -t 'devices/#' -v
 
-# Publish teste
-mosquitto_pub -h localhost -p 1883 -t 'devices/test/status' -m 'ON'
-
-# Publish leitura
-mosquitto_pub -h localhost -p 1883 -t 'devices/test/energy' \
-  -m '{"valueWh": 150.5, "voltage": 220, "current": 0.68}'
+# Publish como nó (credencial de POST /nodes; o device precisa estar no nó)
+mosquitto_pub -h localhost -p 1883 -u node-xxxx -P '<senha>' -t 'devices/test/status' -m 'ON'
+mosquitto_pub -h localhost -p 1883 -u node-xxxx -P '<senha>' -t 'devices/test/energy' \
+  -m '{"powerW": 150.5, "energyTotalWh": 123456.7, "voltage": 220, "current": 0.68}'
 ```
 
 Veja [MQTT_SETUP.md](./MQTT_SETUP.md) para mais detalhes.

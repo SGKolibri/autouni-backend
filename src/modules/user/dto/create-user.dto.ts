@@ -5,6 +5,7 @@ import {
   IsOptional,
   IsString,
   Matches,
+  MinLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserRole } from '../interfaces/user.interface';
@@ -25,9 +26,12 @@ export class CreateUserDto {
   @IsEnum(UserRole)
   role?: UserRole;
 
-  @ApiPropertyOptional({ minLength: 6 })
-  @IsOptional()
+  // Obrigatória: a coluna User.password é NOT NULL, e uma conta sem senha não
+  // tem como entrar.
+  @ApiProperty({ minLength: 6 })
+  @IsNotEmpty()
   @IsString()
+  @MinLength(6)
   password: string;
 
   @ApiProperty({ example: '+55 11 91234-5678' })

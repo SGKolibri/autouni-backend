@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
@@ -20,6 +20,12 @@ import { RoomsModule } from './modules/rooms/rooms.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { PushModule } from './modules/push/push.module';
+import { OrganizationsModule } from './modules/organizations/organizations.module';
+import { NodesModule } from './modules/nodes/nodes.module';
+import { TelemetryModule } from './modules/telemetry/telemetry.module';
+import { TenantMiddleware } from './common/tenant/tenant.middleware';
+import { AuthGuard } from './guards/auth.guard';
+import { RolesGuard } from './common/auth/roles.guard';
 
 @Module({
   imports: [
@@ -34,18 +40,32 @@ import { PushModule } from './modules/push/push.module';
     RealtimeModule,
     UserModule,
     AuthModule,
+    OrganizationsModule,
     BuildingsModule,
     FloorsModule,
     RoomsModule,
     DevicesModule,
+    NodesModule,
     MqttModule,
     EnergyModule,
+    TelemetryModule,
     AutomationsModule,
     NotificationsModule,
     ReportsModule,
     PushModule,
   ],
   controllers: [AppController],
-  providers: [AppService, PrismaService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [
+    AppService,
+    PrismaService,
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // Autenticação e papel valem para toda rota; a exceção é explícita (@Public).
+    { provide: APP_GUARD, useClass: AuthGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
+  ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(TenantMiddleware).forRoutes({ path: '{*path}', method: RequestMethod.ALL });
+  }
+}

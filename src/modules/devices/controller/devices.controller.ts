@@ -27,8 +27,10 @@ import { BulkControlDeviceDto } from '../dto/bulk-control-device.dto';
 import { FindDevicesQueryDto } from '../dto/find-devices-query.dto';
 import { DeviceStatus, DeviceType } from '../interfaces/devices.interface';
 import { AuthGuard } from '../../../guards/auth.guard';
+import { RolesGuard } from '../../../common/auth/roles.guard';
+import { INSTALLERS, MANAGERS, OPERATORS, Roles } from '../../../common/auth/roles';
 
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, RolesGuard)
 @ApiBearerAuth('JWT-auth')
 @ApiTags('Devices')
 @Controller('devices')
@@ -36,6 +38,7 @@ export class DevicesController {
   constructor(private readonly devicesService: DevicesService) {}
 
   @Post()
+  @Roles(...OPERATORS)
   @ApiOperation({ 
     summary: 'Create a new device',
     description: 'Cria um novo dispositivo IoT vinculado a uma sala'
@@ -79,6 +82,7 @@ export class DevicesController {
   // Precisa vir antes de qualquer rota `@Post(':id/...')`, senão o Nest
   // interpreta 'bulk-control' como um `:id`.
   @Post('bulk-control')
+  @Roles(...OPERATORS)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Control multiple devices at once',
@@ -257,6 +261,7 @@ export class DevicesController {
   }
 
   @Post(':id/control')
+  @Roles(...OPERATORS)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Control a device',
@@ -312,6 +317,7 @@ export class DevicesController {
   }
 
   @Put(':id')
+  @Roles(...OPERATORS)
   @ApiOperation({
     summary: 'Update device',
     description:
@@ -330,6 +336,7 @@ export class DevicesController {
   }
 
   @Put(':id/status')
+  @Roles(...OPERATORS)
   @ApiOperation({ 
     summary: 'Update device status',
     description:
@@ -368,6 +375,7 @@ export class DevicesController {
   }
 
   @Put(':id/online')
+  @Roles(...INSTALLERS)
   @ApiOperation({
     summary: 'Update device online status',
     description:
@@ -397,6 +405,7 @@ export class DevicesController {
   }
 
   @Delete(':id')
+  @Roles(...MANAGERS)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete device' })
   @ApiParam({ name: 'id', description: 'Device UUID' })

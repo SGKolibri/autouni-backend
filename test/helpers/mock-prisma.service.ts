@@ -1,7 +1,9 @@
 export type MockPrismaService = {
   user: {
     findUnique: jest.Mock;
+    findFirst: jest.Mock;
     findMany: jest.Mock;
+    count: jest.Mock;
     create: jest.Mock;
     update: jest.Mock;
     delete: jest.Mock;
@@ -18,7 +20,9 @@ export type MockPrismaService = {
 export const createMockPrismaService = (): MockPrismaService => ({
   user: {
     findUnique: jest.fn(),
+    findFirst: jest.fn(),
     findMany: jest.fn(),
+    count: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),

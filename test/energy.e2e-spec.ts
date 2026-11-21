@@ -19,7 +19,8 @@ describe('Energy Module (e2e)', () => {
   const mockReading = {
     id: 'reading-uuid-1',
     deviceId: VALID_UUID,
-    valueWh: 150.5,
+    energyWh: 150.5,
+    powerW: 1200,
     voltage: 220,
     current: 0.68,
     timestamp: new Date('2025-01-01').toISOString(),
@@ -27,11 +28,11 @@ describe('Energy Module (e2e)', () => {
   };
 
   const mockAggregation = {
-    _sum: { valueWh: 150000 },
+    _sum: { energyWh: 150000 },
     _count: 100,
-    _avg: { valueWh: 1500 },
-    _max: { valueWh: 3000 },
-    _min: { valueWh: 50 },
+    _avg: { energyWh: 1500, powerW: 900 },
+    _max: { energyWh: 3000, powerW: 2400 },
+    _min: { energyWh: 50 },
   };
 
   beforeAll(async () => {
@@ -40,6 +41,8 @@ describe('Energy Module (e2e)', () => {
     mockPrisma = {
       energyReading: {
         create: jest.fn(),
+        // Leitura anterior, usada para derivar a energia do intervalo.
+        findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn(),
         aggregate: jest.fn(),
         deleteMany: jest.fn(),
@@ -103,11 +106,12 @@ describe('Energy Module (e2e)', () => {
       const response = await request(app.getHttpServer())
         .post('/energy/readings')
         .set('Authorization', `Bearer ${authToken}`)
-        .send({ deviceId: VALID_UUID, valueWh: 150.5, voltage: 220, current: 0.68 })
+        .send({ deviceId: VALID_UUID, energyWh: 150.5, powerW: 1200, voltage: 220, current: 0.68 })
         .expect(201);
 
       expect(response.body).toHaveProperty('id', mockReading.id);
-      expect(response.body).toHaveProperty('valueWh', 150.5);
+      expect(response.body).toHaveProperty('energyWh', 150.5);
+      expect(mockPrisma.energyReading.create.mock.calls[0][0].data).toMatchObject({ energyWh: 150.5, powerW: 1200 });
     });
 
     it('should return 201 with only required fields', async () => {
@@ -116,14 +120,39 @@ describe('Energy Module (e2e)', () => {
       await request(app.getHttpServer())
         .post('/energy/readings')
         .set('Authorization', `Bearer ${authToken}`)
-        .send({ deviceId: VALID_UUID, valueWh: 100 })
+        .send({ deviceId: VALID_UUID, energyWh: 100 })
         .expect(201);
+    });
+
+    it('should return 400 for the legacy valueWh field', async () => {
+      await request(app.getHttpServer())
+        .post('/energy/readings')
+        .set('Authorization', `Bearer ${authToken}`)
+        .send({ deviceId: VALID_UUID, valueWh: 100 })
+        .expect(400);
+    });
+
+    it('should return 400 when neither energy nor power is sent', async () => {
+      await request(app.getHttpServer())
+        .post('/energy/readings')
+        .set('Authorization', `Bearer ${authToken}`)
+        .send({ deviceId: VALID_UUID, voltage: 220 })
+        .expect(400);
+    });
+
+    it('should return 403 for a VIEWER', async () => {
+      const viewer = generateTestToken(jwtService, { role: 'VIEWER' });
+      await request(app.getHttpServer())
+        .post('/energy/readings')
+        .set('Authorization', `Bearer ${viewer}`)
+        .send({ deviceId: VALID_UUID, energyWh: 1 })
+        .expect(403);
     });
 
     it('should return 401 when no auth token', async () => {
       await request(app.getHttpServer())
         .post('/energy/readings')
-        .send({ deviceId: VALID_UUID, valueWh: 150 })
+        .send({ deviceId: VALID_UUID, energyWh: 150 })
         .expect(401);
     });
   });

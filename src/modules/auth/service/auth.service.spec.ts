@@ -25,6 +25,8 @@ describe('AuthService', () => {
     cpf: null,
     role: 'VIEWER',
     avatar: null,
+    organizationId: 'org-1',
+    organization: { id: 'org-1', slug: 'default', name: 'Organização padrão' },
     createdAt: new Date('2025-01-01'),
     updatedAt: new Date('2025-01-01'),
   };
@@ -36,6 +38,8 @@ describe('AuthService', () => {
         {
           provide: AuthRepository,
           useValue: {
+            findUsersByEmailForLogin: jest.fn(),
+            findUserForRefresh: jest.fn(),
             findUserByEmail: jest.fn(),
             findUserByCpf: jest.fn(),
             createUser: jest.fn(),
@@ -68,43 +72,63 @@ describe('AuthService', () => {
 
   describe('validateUser', () => {
     it('should return user without password on valid credentials', async () => {
-      authRepository.findUserByEmail.mockResolvedValue(mockUser as any);
+      authRepository.findUsersByEmailForLogin.mockResolvedValue([mockUser] as any);
       const result = await service.validateUser('joao@email.com', 'password123');
       expect(result).not.toHaveProperty('password');
       expect(result.email).toBe('joao@email.com');
     });
 
     it('should throw UnauthorizedException when user not found', async () => {
-      authRepository.findUserByEmail.mockResolvedValue(null);
+      authRepository.findUsersByEmailForLogin.mockResolvedValue([]);
       await expect(service.validateUser('notfound@email.com', 'password123')).rejects.toThrow(UnauthorizedException);
     });
 
     it('should throw UnauthorizedException when user has no password', async () => {
-      authRepository.findUserByEmail.mockResolvedValue({ ...mockUser, password: null } as any);
+      authRepository.findUsersByEmailForLogin.mockResolvedValue([{ ...mockUser, password: null }] as any);
       await expect(service.validateUser('joao@email.com', 'password123')).rejects.toThrow(UnauthorizedException);
     });
 
     it('should throw UnauthorizedException when password is wrong', async () => {
-      authRepository.findUserByEmail.mockResolvedValue(mockUser as any);
+      authRepository.findUsersByEmailForLogin.mockResolvedValue([mockUser] as any);
       await expect(service.validateUser('joao@email.com', 'wrongpassword')).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should pick the only organization whose password matches', async () => {
+      const other = { ...mockUser, id: 'user-2', organizationId: 'org-2', password: bcrypt.hashSync('other-pass', 10) };
+      authRepository.findUsersByEmailForLogin.mockResolvedValue([mockUser, other] as any);
+      const result = await service.validateUser('joao@email.com', 'other-pass');
+      expect(result.organizationId).toBe('org-2');
+    });
+
+    it('should ask for the organization when the password matches in more than one', async () => {
+      const twin = { ...mockUser, id: 'user-2', organizationId: 'org-2', organization: { id: 'org-2', slug: 'campus-2', name: 'Campus 2' } };
+      authRepository.findUsersByEmailForLogin.mockResolvedValue([mockUser, twin] as any);
+      await expect(service.validateUser('joao@email.com', 'password123')).rejects.toThrow(BadRequestException);
     });
   });
 
   describe('login', () => {
     it('should return tokens and user on valid credentials', async () => {
-      authRepository.findUserByEmail.mockResolvedValue(mockUser as any);
+      authRepository.findUsersByEmailForLogin.mockResolvedValue([mockUser] as any);
       authRepository.createRefreshToken.mockResolvedValue(undefined as any);
 
       const result = await service.login({ email: 'joao@email.com', password: 'password123' });
       expect(result).toHaveProperty('accessToken');
       expect(result).toHaveProperty('refreshToken');
-      expect(result).toHaveProperty('user');
       expect(result.user).not.toHaveProperty('password');
       expect(authRepository.createRefreshToken).toHaveBeenCalled();
     });
 
+    it('should sign access and refresh tokens with the organization and token type', async () => {
+      authRepository.findUsersByEmailForLogin.mockResolvedValue([mockUser] as any);
+      await service.login({ email: 'joao@email.com', password: 'password123' });
+      const payloads = jwtService.sign.mock.calls.map((c) => c[0] as any);
+      expect(payloads.map((p) => p.typ)).toEqual(['access', 'refresh']);
+      expect(payloads.every((p) => p.orgId === 'org-1')).toBe(true);
+    });
+
     it('should throw when credentials are invalid', async () => {
-      authRepository.findUserByEmail.mockResolvedValue(null);
+      authRepository.findUsersByEmailForLogin.mockResolvedValue([]);
       await expect(service.login({ email: 'notfound@email.com', password: 'pass' })).rejects.toThrow(UnauthorizedException);
     });
   });
@@ -158,7 +182,7 @@ describe('AuthService', () => {
   });
 
   describe('refreshToken', () => {
-    const tokenPayload = { email: 'joao@email.com', sub: 'user-uuid-1', role: 'VIEWER', name: 'Joao' };
+    const tokenPayload = { email: 'joao@email.com', sub: 'user-uuid-1', role: 'VIEWER', name: 'Joao', orgId: 'org-1', typ: 'refresh' };
     const rawToken = 'raw-refresh-token';
     const tokenHash = bcrypt.hashSync(rawToken, 10);
 
@@ -167,10 +191,16 @@ describe('AuthService', () => {
       authRepository.findRefreshTokensByUserId.mockResolvedValue([
         { id: 'rt-1', tokenHash, expiresAt: new Date(Date.now() + 1000000) },
       ] as any);
-      authRepository.findUserByEmail.mockResolvedValue(mockUser as any);
+      authRepository.findUserForRefresh.mockResolvedValue(mockUser as any);
 
       const result = await service.refreshToken(rawToken);
       expect(result).toHaveProperty('accessToken');
+      expect(authRepository.findUserForRefresh).toHaveBeenCalledWith('user-uuid-1', 'org-1');
+    });
+
+    it('should reject an access token used as refresh token', async () => {
+      jwtService.verify.mockReturnValue({ ...tokenPayload, typ: 'access' } as any);
+      await expect(service.refreshToken(rawToken)).rejects.toThrow(UnauthorizedException);
     });
 
     it('should throw UnauthorizedException when JWT verify fails', async () => {
@@ -197,7 +227,7 @@ describe('AuthService', () => {
       authRepository.findRefreshTokensByUserId.mockResolvedValue([
         { id: 'rt-1', tokenHash, expiresAt: new Date(Date.now() + 1000000) },
       ] as any);
-      authRepository.findUserByEmail.mockResolvedValue(null);
+      authRepository.findUserForRefresh.mockResolvedValue(null);
       await expect(service.refreshToken(rawToken)).rejects.toThrow(UnauthorizedException);
     });
   });

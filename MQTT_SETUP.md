@@ -1,757 +1,366 @@
 # MQTT Setup — AutoUni Backend
 
-Guia de configuração e integração MQTT do AutoUni. Descreve o broker, os tópicos, os formatos de payload aceitos e como um dispositivo (ESP32 ou similar) se integra ao backend.
+Contrato MQTT do AutoUni: o broker, a autenticação por nó, os tópicos, os payloads aceitos e o que o backend faz com cada mensagem. É o documento que o firmware do ESP32 segue.
 
-> Fonte da verdade: `src/modules/mqtt/` (serviço, repositório e interfaces), `docker-compose.yml` e `prisma/schema.prisma`.
-> Onde a implementação atual diverge do que o `README.md` / `USO.md` descrevem, isso está sinalizado em [Limitações conhecidas](#-limitações-conhecidas).
-
----
-
-## 📋 Índice
-
-- [Arquitetura](#-arquitetura)
-- [O broker](#-o-broker)
-- [Endereços de conexão](#-endereços-de-conexão)
-- [Variáveis de ambiente](#-variáveis-de-ambiente)
-- [Tópicos subscritos](#-tópicos-subscritos)
-- [Como um tópico vira um dispositivo](#-como-um-tópico-vira-um-dispositivo)
-- [Formatos de payload](#-formatos-de-payload)
-- [Publicação do backend para dispositivos](#-publicação-do-backend-para-dispositivos)
-- [Eventos WebSocket correspondentes](#-eventos-websocket-correspondentes)
-- [Testando com mosquitto_pub / mosquitto_sub](#-testando-com-mosquitto_pub--mosquitto_sub)
-- [Exemplo ESP32](#-exemplo-esp32)
-- [Troubleshooting](#-troubleshooting)
-- [Limitações conhecidas](#-limitações-conhecidas)
+> Fonte da verdade: `src/modules/mqtt/`, `src/modules/telemetry/payload-parsing.ts`, `src/modules/nodes/node-acl.ts`, `mosquitto/config/mosquitto.conf` e `prisma/schema.prisma`.
 
 ---
 
-## 🏗 Arquitetura
+## Índice
 
-```
-┌──────────────┐   devices/+/status           ┌──────────────────┐
-│              │   devices/+/energy           │                  │
-│  Dispositivo │ ───────────────────────────► │   Broker MQTT    │
-│  (ESP32)     │   devices/+/reading          │  (mosquitto)     │
-│              │   devices/+/online           │                  │
-└──────────────┘                              └────────┬─────────┘
-       ▲                                               │ subscribe
-       │  devices/<id>/command                         ▼
-       │                                      ┌──────────────────┐
-       │  ┌────────────────────────────────── │   MqttService    │
-       │  │  publish                          │   (NestJS)       │
-       │  │                                   └────────┬─────────┘
-       │  ├── DevicesService (rotas de controle)       │
-       │  └── AutomationsService (agendamentos)        │
-       │                                               │
-       │                    ┌──────────────────────────┴──────────┐
-       │                    ▼                                     ▼
-       │            ┌───────────────┐                   ┌──────────────────┐
-       │            │ MqttRepository│                   │ RealtimeGateway  │
-       │            │  (Prisma)     │                   │  (Socket.IO)     │
-       │            └───────┬───────┘                   └────────┬─────────┘
-       │                    ▼                                    ▼
-       │            Device.status                        device:status
-       │            Device.online   ◄── só por aqui      device:online
-       │            Device.lastSeen ◄── só por aqui      energy:update
-       │            EnergyReading                        mqtt:raw
-       │
-       └── confirmação do hardware sobrescreve a gravação otimista
-```
-
-O `MqttModule` é `@Global()` (`src/modules/mqtt/mqtt.module.ts`), então `MqttService` e `MqttRepository` ficam disponíveis em toda a aplicação sem import explícito.
-
-O ciclo de vida da conexão está em `MqttService`:
-
-- **`onModuleInit`** — conecta apenas se `MQTT_URL` estiver definida e não vazia. Caso contrário loga `MQTT_URL not configured. MQTT features disabled.` e a aplicação sobe normalmente, sem MQTT.
-- **`connect()`** — cliente `mqtt@^5` com `reconnectPeriod: 5000` e `connectTimeout: 30000`. A reconexão é automática.
-- **`onModuleDestroy`** — encerra o cliente.
+- [Arquitetura](#arquitetura)
+- [O broker e a autenticação](#o-broker-e-a-autenticação)
+- [Variáveis de ambiente](#variáveis-de-ambiente)
+- [Nós físicos e credenciais](#nós-físicos-e-credenciais)
+- [Tópicos](#tópicos)
+- [Payloads](#payloads)
+- [Comandos do backend para o nó](#comandos-do-backend-para-o-nó)
+- [Eventos WebSocket](#eventos-websocket)
+- [Testando com mosquitto_pub / mosquitto_sub](#testando-com-mosquitto_pub--mosquitto_sub)
+- [Troubleshooting](#troubleshooting)
+- [Limitações conhecidas](#limitações-conhecidas)
 
 ---
 
-## 🐳 O broker
+## Arquitetura
 
-Definido em `docker-compose.yml`:
-
-```yaml
-mqtt:
-  image: eclipse-mosquitto:latest
-  container_name: autoUniMqtt
-  restart: unless-stopped
-  ports:
-    - '1883:1883'
-    - '9001:9001'
-  volumes:
-    - mqtt-data:/mosquitto/data
-    - mqtt-logs:/mosquitto/log
-  networks:
-    - autouni-network
-  command: mosquitto -c /mosquitto-no-auth.conf
+```
+┌──────────────┐  org/<org>/devices/<slug>/energy|sensor|…     ┌──────────────┐
+│  Nó ESP32    │ ───────────────────────────────────────────▶ │  Mosquitto   │
+│ (credencial  │  org/<org>/nodes/<usuário>/online (LWT)      │ dynamic-     │
+│  própria)    │ ◀─────────────────────────────────────────── │ security     │
+└──────────────┘  org/<org>/devices/<slug>/command             └──────┬───────┘
+                                                                      │ assina org/+/devices/+/…
+                                                                      ▼
+                                                              ┌──────────────┐
+                                                              │   Backend    │──▶ Postgres
+                                                              │   NestJS     │──▶ WebSocket (sala da organização)
+                                                              └──────────────┘
 ```
 
-Subir apenas o broker:
+- Um **nó** é um ESP32. Ele tem um usuário e uma senha MQTT próprios.
+- Cada **device** é um canal do nó (relé, dimmer, IR, medidor PZEM, MQ-2, MQ-135, PIR) e tem um slug `devices/<slug>` (campo `Device.mqttTopic`).
+- **Todo tópico tem o namespace da organização**: `org/<organizationId>/devices/<slug>/<sufixo>`. O `<organizationId>` é o UUID da organização e vem pronto no campo `topicPrefix` das credenciais do nó.
+- O broker só deixa o nó publicar nos tópicos dos devices dele, sob o prefixo da própria organização, e só nos sufixos que cada canal produz. É o prefixo que diz ao backend de qual organização a mensagem é.
 
-```bash
-docker compose up -d mqtt
-docker compose logs -f mqtt
-```
-
-### ⚠️ O broker roda sem autenticação
-
-O `/mosquitto-no-auth.conf` que vem na imagem oficial contém:
-
-```conf
-listener 1883
-allow_anonymous true
-
-listener 9883
-protocol http_api
-http_dir /usr/share/mosquitto/dashboard
-```
-
-Consequências práticas:
-
-| Ponto | Situação |
-|-------|----------|
-| Autenticação | **Nenhuma.** Qualquer cliente publica e assina qualquer tópico. |
-| Porta 1883 | Publicada em `0.0.0.0` no host — acessível por toda a LAN. |
-| Porta 9001 | **Publicada mas morta.** O broker não abre listener em 9001; não há WebSocket configurado. |
-| Porta 9883 | Listener HTTP API/dashboard existe no container, mas **não** está publicada no host. |
-| ACLs | Nenhuma. Não há separação por dispositivo. |
-
-Para uso em rede confiável (laboratório, LAN isolada) isso é aceitável. Para qualquer coisa exposta, veja [Endurecendo o broker](#endurecendo-o-broker).
-
-### Habilitando WebSocket (opcional)
-
-Se o front-end precisar falar MQTT direto do navegador, o mapeamento `9001:9001` só passa a servir para algo depois de criar um config próprio:
-
-```conf
-# mosquitto/config/mosquitto.conf
-listener 1883
-protocol mqtt
-allow_anonymous true
-
-listener 9001
-protocol websockets
-allow_anonymous true
-```
-
-E ajustar o serviço:
-
-```yaml
-mqtt:
-  volumes:
-    - ./mosquitto/config:/mosquitto/config
-    - mqtt-data:/mosquitto/data
-    - mqtt-logs:/mosquitto/log
-  command: mosquitto -c /mosquitto/config/mosquitto.conf
-```
-
-Note que o backend usa o transporte TCP (`mqtt://`), não WebSocket — essa mudança serve só a clientes de browser.
+Neste documento, `<P>` abrevia `org/<organizationId>`.
 
 ---
 
-## 🌐 Endereços de conexão
+## O broker e a autenticação
 
-O broker não tem IP próprio na LAN: ele roda em bridge no Docker e a porta 1883 é publicada no host.
+O broker roda com o plugin **dynamic-security** do Mosquitto (`mosquitto/config/mosquitto.conf`):
+
+- `allow_anonymous false`: sem usuário e senha, a conexão é recusada (`not authorised`).
+- Usuários, senhas (com hash) e ACLs ficam em `/mosquitto/data/dynamic-security.json`, no volume `mqtt-data`.
+- Na primeira subida, `mosquitto/init.sh` cria esse arquivo com o administrador `MQTT_USERNAME` / `MQTT_PASSWORD`.
+
+O backend se conecta com esse administrador e:
+
+1. Garante para si o papel `autouni-backend`, com permissão de publicar apenas em `org/+/devices/+/command` (o administrador criado pelo `dynsec init` só assina).
+2. Cria, altera e remove as credenciais dos nós pelo tópico `$CONTROL/dynamic-security/v1`.
+3. A cada reconexão, reconcilia a ACL de todos os nós com o banco.
+
+> O Mosquitto derruba a sessão de um cliente quando os papéis dele mudam. Na primeira subida, o backend reconecta uma vez logo depois de ganhar o papel `autouni-backend`. Mudanças na ACL de um nó também podem derrubar a sessão dele; o firmware precisa reconectar sozinho.
+
+A imagem é fixada em `eclipse-mosquitto:2.0.20`, porque o caminho do plugin faz parte do contrato.
+
+### Endereços
 
 | Cliente | URL |
 |---------|-----|
-| Serviço `app` (dentro do compose) | `mqtt://mqtt:1883` — hostname do serviço |
-| Ferramenta rodando no host | `mqtt://localhost:1883` |
-| ESP32 / celular / outra máquina na LAN | `mqtt://<IP-do-host>:1883` |
-
-Descobrir o IP do host na LAN:
-
-```bash
-ip -4 addr show scope global | grep inet
-# ex.: inet 192.168.77.34/24 ... wlp194s0
-```
-
-O IP costuma vir de DHCP e muda em reboot do roteador. Para dispositivos embarcados, reserve o IP no DHCP do roteador ou use mDNS em vez de gravar o endereço no firmware.
+| Serviço `app` (dentro do compose) | `mqtt://mqtt:1883` |
+| Ferramenta no host | `mqtt://localhost:1883` |
+| ESP32 na LAN | `mqtt://<IP-do-host>:1883` (informe em `MQTT_PUBLIC_URL`) |
 
 ---
 
-## ⚙️ Variáveis de ambiente
+## Variáveis de ambiente
 
-Lidas diretamente de `process.env` em `MqttService`:
+| Variável | Onde | Descrição |
+|----------|------|-----------|
+| `MQTT_URL` | backend | URL do broker. Vazia: MQTT desligado (a API sobe mesmo assim). |
+| `MQTT_USERNAME` / `MQTT_PASSWORD` | backend e broker | Administrador do broker e identidade do backend. **Obrigatórias** no `.env` do compose. |
+| `MQTT_PUBLIC_URL` | backend | Endereço que os ESP32 usam. Vai na resposta de `POST /nodes`. |
+| `MQTT_DYNSEC` | backend | `false` desliga a gestão de credenciais (broker legado). Padrão: ligado sempre que `MQTT_URL` existe. |
 
-| Variável | Obrigatória | Padrão | Descrição |
-|----------|-------------|--------|-----------|
-| `MQTT_URL` | Sim (para habilitar MQTT) | — | URL do broker. Vazia ou ausente ⇒ MQTT desligado, app sobe sem erro. |
-| `MQTT_USERNAME` | Não | `undefined` | Repassada ao `connect()`. |
-| `MQTT_PASSWORD` | Não | `undefined` | Repassada ao `connect()`. |
-
-No `docker-compose.yml`, o serviço `app` recebe:
-
-```yaml
-MQTT_URL: ${MQTT_URL:-mqtt://mqtt:1883}
-```
-
-> ⚠️ `MQTT_USERNAME` e `MQTT_PASSWORD` **não** estão na lista de `environment` do serviço `app`. Defini-las no `.env` não as faz chegar ao container. Se ativar autenticação no broker, adicione as duas ao bloco `environment` do `app`.
-
-`.env` para desenvolvimento local (backend fora do Docker, broker no Docker):
+`.env` mínimo para o compose:
 
 ```env
-MQTT_URL=mqtt://localhost:1883
+MQTT_USERNAME=autouni-backend
+MQTT_PASSWORD=<senha longa e aleatória>
+MQTT_PUBLIC_URL=mqtt://192.168.0.10:1883
 ```
+
+> Trocar `MQTT_PASSWORD` depois da primeira subida não muda a senha no broker, que já está gravada no volume. Troque com `mosquitto_ctrl dynsec setClientPassword` ou recrie o volume `mqtt-data`.
 
 ---
 
-## 📥 Tópicos subscritos
+## Nós físicos e credenciais
 
-Assinados automaticamente em `subscribeToDefaultTopics()`, com **QoS 0**, logo após o evento `connect`:
+Fluxo de instalação de um ESP32 (perfis ADMIN ou TECHNICIAN):
 
-```
-devices/+/status     → Device.status + heartbeat (lastSeen, online=true)
-devices/+/energy     → cria EnergyReading + heartbeat
-devices/+/reading    → cria EnergyReading + heartbeat (alias de /energy)
-devices/+/online     → Device.online (o booleano do payload) + lastSeen
-```
+1. **Cadastrar o nó**: `POST /nodes` com `{ "name": "ESP32 Sala A206", "roomId": "…" }`. A resposta traz as credenciais:
+   ```json
+   {
+     "node": { "id": "…", "mqttUsername": "node-67f06fc2", … },
+     "credentials": {
+       "username": "node-67f06fc2",
+       "password": "…",
+       "brokerUrl": "mqtt://192.168.0.10:1883",
+       "topicPrefix": "org/00000000-0000-0000-0000-000000000001",
+       "lastWillTopic": "org/00000000-0000-0000-0000-000000000001/nodes/node-67f06fc2/online"
+     }
+   }
+   ```
+   **A senha aparece só aqui.** O backend não a guarda; o broker guarda só o hash.
+2. **Atribuir os devices ao nó**: `POST /devices` ou `PUT /devices/:id` com `nodeId` e `channel`. Device em nó sem `channel` é recusado.
+3. A ACL do nó é recalculada automaticamente a cada criação, alteração ou remoção de device.
 
-O curinga `+` casa **exatamente um** segmento. Ou seja, o tópico publicado precisa ter exatamente três níveis: `devices/<identificador>/<sufixo>`. Um tópico como `devices/predio-a/sala-101/status` **não** é recebido.
+| Ação | Rota |
+|------|------|
+| Gerar nova senha (derruba a sessão antiga) | `POST /nodes/:id/rotate-credentials` |
+| Reaplicar a ACL no broker | `POST /nodes/:id/sync-acl` |
+| Remover o nó e revogar a credencial | `DELETE /nodes/:id` |
 
-QoS 0 significa entrega no máximo uma vez, sem confirmação: mensagens publicadas enquanto o backend está reiniciando são perdidas. Sensores devem republicar periodicamente em vez de depender de um único envio.
+### O que cada canal pode fazer (ACL)
 
----
+| `channel` | Publica | Assina |
+|-----------|---------|--------|
+| `ENERGY_METER` | `status`, `online`, `energy` | — |
+| `RELAY`, `DIMMER` | `status`, `online`, `energy` | `command` |
+| `IR` | `status`, `online` | `command` |
+| `GAS_MQ2`, `GAS_MQ135`, `PIR` | `status`, `online`, `sensor` | — |
+| sem canal (cadastro antigo) | tudo | `command` |
 
-## 🔗 Como um tópico vira um dispositivo
-
-Este é o ponto que mais gera confusão. Ao receber uma mensagem, `MqttRepository.findDeviceByTopic()` resolve o dispositivo em duas tentativas:
-
-1. **Match exato** — procura `Device.mqttTopic == 'devices/light-101/status'`.
-2. **Match pela base** — se falhar, remove o último segmento e procura `Device.mqttTopic == 'devices/light-101'`.
-
-Como todos os sufixos (`/status`, `/energy`, `/reading`, `/online`) precisam apontar para o mesmo dispositivo, a convenção correta é gravar o **tópico base** no cadastro:
-
-```json
-{
-  "name": "Luz Principal - Sala 101",
-  "roomId": "uuid-da-sala",
-  "type": "LIGHT",
-  "mqttTopic": "devices/light-101"
-}
-```
-
-Com isso, as quatro mensagens abaixo resolvem para o mesmo `Device`:
-
-```
-devices/light-101/status
-devices/light-101/energy
-devices/light-101/reading
-devices/light-101/online
-```
-
-Regras importantes:
-
-- `Device.mqttTopic` é `String?` **sem constraint de unicidade** (`prisma/schema.prisma`). Se dois dispositivos tiverem o mesmo `mqttTopic`, o `findFirst` resolve para um deles de forma não determinística. Trate `mqttTopic` como único por convenção.
-- Dispositivo sem `mqttTopic` cadastrado nunca é resolvido — as mensagens caem no caminho "não identificado".
-- Quando nenhum dispositivo casa, o backend loga `No device found for topic <topic>` e emite o evento WebSocket `mqtt:raw` com o payload bruto, **sem persistir nada**. Isso é útil para descobrir dispositivos novos ainda não cadastrados.
+Todas as permissões ficam sob `<P>/`. Todo nó também publica `<P>/nodes/<usuário>/online`. A matriz está em `src/modules/nodes/node-acl.ts`. A mesma regra é aplicada pelo backend ao receber a mensagem (`channel-capabilities.ts`): uma leitura de energia vinda de um canal de gás é rejeitada mesmo que chegue.
 
 ---
 
-## 📦 Formatos de payload
+## Tópicos
 
-Todo payload é tentado como JSON; se o parse falhar, o valor é tratado como string crua.
+O backend assina, com QoS 1:
 
-### `devices/<id>/status`
+| Tópico | Efeito |
+|--------|--------|
+| `org/+/devices/+/status` | `Device.status` e heartbeat |
+| `org/+/devices/+/energy` | Cria `EnergyReading` e heartbeat |
+| `org/+/devices/+/sensor` | Cria `SensorReading` e avalia alarme ou ocupação; heartbeat |
+| `org/+/devices/+/online` | `Device.online` |
+| `org/+/nodes/+/online` | `DeviceNode.online` e `online` de **todos** os devices do nó (é o LWT do ESP32) |
 
-Atualiza `Device.status` e `Device.lastSeen`.
+### Como um tópico vira um device
 
-```bash
-# string crua
+`org/<organizationId>/devices/<slug>/<sufixo>` é resolvido em duas partes:
+
+- O **segundo nível** é a organização. Todo o processamento (busca do device, gravação, alarmes, eventos de WebSocket) roda no escopo dela. Um slug que só existe em outra organização simplesmente não é encontrado.
+- `devices/<slug>` é comparado com `Device.mqttTopic`. **Exatamente um nível** depois de `devices/`: `…/devices/predio/sala/x/status` nunca é recebido, e o cadastro de device recusa esse formato.
+- `mqttTopic` é **único dentro da organização**. Duas organizações podem ter `devices/ac-a101`. Duplicata na mesma organização retorna `409`.
+- Tópicos fora do namespace (`devices/x/status`, sem `org/<id>/`) não são assinados pelo backend e a ACL dos nós não os permite.
+
+Tópico sem device cadastrado é descartado com log `No device registered for …`.
+
+Mensagens de um mesmo device são processadas **em ordem**, porque a energia do intervalo depende da leitura anterior.
+
+O alias `devices/+/reading` foi removido.
+
+---
+
+## Payloads
+
+Tudo que não cumpre o contrato é **rejeitado** com log `Rejected MQTT message on <tópico>: <motivo>`. Nada é gravado com valor inventado.
+
+### `<P>/devices/<slug>/status`
+
+```
 ON
-
-# ou JSON
-{"status":"ON"}
+{"status":"OFF"}
 ```
 
-O valor precisa ser um membro do enum `DeviceStatus` do Prisma:
+Precisa ser um de `ON`, `OFF`, `STANDBY` ou `ERROR` (maiúsculas ou minúsculas). É o **estado real** do aparelho, confirmado pelo hardware. **Não** use `status` para alarme de gás: gás vai em `/sensor`.
 
-| Valor | Significado |
-|-------|-------------|
-| `ON` | Ligado |
-| `OFF` | Desligado |
-| `STANDBY` | Em espera |
-| `ERROR` | Falha |
+### `<P>/devices/<slug>/online` e `<P>/nodes/<usuário>/online`
 
-> Valores fora do enum (`on`, `ligado`, `1`) fazem o `prisma.device.update` lançar. O erro é capturado e logado como `Error handling MQTT message`, o status **não** é atualizado e nenhum evento WebSocket é emitido. O dispositivo não recebe nenhum retorno — falha silenciosa do ponto de vista do firmware.
-
-Campos extras no JSON (`intensity`, `mode`, …) são ignorados: só `status` é lido.
-
-### `devices/<id>/energy` e `devices/<id>/reading`
-
-Cria um registro em `EnergyReading`. Os dois tópicos são tratados de forma idêntica.
-
-```json
-{ "valueWh": 150.5, "voltage": 220, "current": 0.68 }
 ```
-
-| Campo | Aceito como | Tipo no banco | Observação |
-|-------|-------------|---------------|------------|
-| `valueWh` | `valueWh` ⇒ `power` ⇒ `watts` ⇒ `value` | `Float` (obrigatório) | Primeiro presente vence; nenhum deles ⇒ grava `0`. |
-| `voltage` | `voltage` | `Float?` | Opcional. |
-| `current` | `current` | `Float?` | Opcional. |
-
-Os aliases existem para acomodar firmwares diferentes — estes quatro payloads gravam o mesmo `valueWh`:
-
-```json
-{"valueWh": 150.5}
-{"power": 150.5}
-{"watts": 150.5}
-{"value": 150.5}
-```
-
-> ⚠️ **`voltage` ou `current` iguais a `0` são gravados como `null`.** A conversão usa um teste de veracidade (`voltage ? Number(voltage) : null`), então zero é descartado junto com `null` e `undefined`. Um sensor reportando corrente zero (dispositivo desligado) grava `current: null`, não `0`. Considere isso ao agregar leituras.
-
-> `timestamp` é sempre gerado pelo servidor (`@default(now())`). Um `timestamp` enviado no payload é ignorado — não há como fazer backfill de leituras antigas por MQTT; use `POST /energy/readings`.
-
-### `devices/<id>/online`
-
-```bash
-# JSON
+true | false | 1 | 0
 {"online":true}
-
-# ou string
-true
 ```
 
-Interpretação: se o payload for objeto, lê `payload.online`; se for string, considera online apenas se for exatamente `'true'` ou `'1'`.
+Qualquer outro valor é rejeitado. O LWT do nó deve ser `<P>/nodes/<usuário>/online` com payload `false` e `retain: true`.
 
-O booleano é persistido em `Device.online` e o evento `device:online` é emitido no WebSocket.
-
-`lastSeen` sobe mesmo quando o payload diz `false`: a mensagem chegou, então houve comunicação. Um LWT publicado pelo broker depois da queda é justamente o caso em que `online: false` e `lastSeen` recente convivem.
-
-### `status` x `online` x `lastSeen`
-
-Três campos independentes que costumam ser confundidos:
-
-| Campo | Pergunta que responde | Quem escreve |
-|-------|----------------------|--------------|
-| `status` | O relé está fechado? (`ON`/`OFF`/`STANDBY`/`ERROR`) | Rotas de controle HTTP (otimista) e confirmação via MQTT (verdade) |
-| `online` | O aparelho é alcançável? | **Só o caminho MQTT**, ou o override `PUT /devices/:id/online` |
-| `lastSeen` | Quando ele falou pela última vez? | **Só o caminho MQTT** |
-
-Um dispositivo pode estar `ON` e `online: false` — ligado, mas incomunicável. E escrita vinda de HTTP nunca carimba `lastSeen`: comandar pela UI não é evidência de que o aparelho está vivo.
-
-Qualquer mensagem inbound (`/status`, `/energy`, `/reading`, `/online`) conta como heartbeat: atualiza `lastSeen` e, exceto no caso de um `online: false` explícito, marca `online = true`.
-
----
-
-## 📤 Publicação do backend para dispositivos
-
-O `MqttService` expõe uma API pública:
-
-```typescript
-publish(topic: string, payload: any, options?: { qos?: 0 | 1 | 2; retain?: boolean }): void
-subscribe(topic: string | string[], qos?: 0 | 1 | 2): void
-unsubscribe(topic: string | string[]): void
-isConnected(): boolean
-```
-
-Comportamento de `publish()`:
-
-- Payload string é enviado como está; qualquer outro valor passa por `JSON.stringify`.
-- Padrões: `qos: 0`, `retain: false`.
-- **Se o cliente não estiver conectado, a chamada é descartada** com um warn (`Cannot publish: MQTT client not connected`). Não há fila nem exceção — quem chama não percebe a perda. Use `isConnected()` antes de operações críticas.
-
-### Produtor 1: rotas de controle de dispositivo
-
-`DevicesService` publica em `{device.mqttTopic}/command` a partir de três rotas:
-
-| Rota | Payload publicado |
-|------|-------------------|
-| `POST /devices/:id/control` | `{ "state": "ON" }` (+ `temperature`/`intensity` quando enviados) |
-| `POST /devices/bulk-control` | idem, uma publicação por device do lote |
-| `PUT /devices/:id/status` | `{ "state": "ON" }` |
-
-O fluxo em todas: resolve o status alvo → publica no broker → grava o status **otimisticamente** no banco → emite `device:status` no WebSocket.
-
-A gravação é otimista de propósito: em vez de um estado intermediário tipo `STANDBY` ("comando em trânsito"), o status alvo vai direto para o banco. Sem hardware respondendo, um estado pendente nunca seria confirmado e a UI ficaria travada. Quando o dispositivo existe de fato, a confirmação chega em `devices/<id>/status` e sobrescreve o valor com a verdade — aí sim atualizando `lastSeen` e `online`.
-
-A resposta traz `pending: true` quando a mensagem realmente saiu no broker. Vem `false` se o device não tem `mqttTopic` ou se o cliente MQTT está desconectado; nesses casos o estado gravado é tudo o que existe, e o log registra o motivo:
-
-```
-Device <id> has no mqttTopic; state persisted without publishing
-MQTT not connected; command for device <id> was not published
-```
-
-### Produtor 2: automações
-
-`AutomationsService.executeAutomation()` (`src/modules/automations/service/automations.service.ts:178`) também publica. O campo `Automation.action` é um JSON; se contiver `topic`, ele é publicado:
+### `<P>/devices/<slug>/energy`
 
 ```json
 {
-  "topic": "devices/light-101/command",
-  "payload": { "state": "ON" }
+  "powerW": 152.4,
+  "energyTotalWh": 123456.7,
+  "voltage": 220.1,
+  "current": 0.69,
+  "frequency": 60.0,
+  "powerFactor": 0.95
 }
 ```
 
-O tópico vem inteiro do cadastro da automação — o backend não deriva nada do `Device.mqttTopic`. O sufixo `/command` é convenção, não regra: qualquer tópico funciona.
+| Campo | Unidade | Faixa | Observação |
+|-------|---------|-------|------------|
+| `powerW` | W | ≥ 0 | Potência instantânea. Nunca é somada. |
+| `energyTotalWh` | Wh | ≥ 0 | Contador acumulado do medidor (PZEM: `energy()` em kWh × 1000). **Preferido.** |
+| `energyWh` | Wh | ≥ 0 | Energia do intervalo, se o firmware já calcular. |
+| `voltage` | V | 0–500 | |
+| `current` | A | 0–200 | `0` é gravado como `0`, não como nulo. |
+| `frequency` | Hz | 0–100 | |
+| `powerFactor` (ou `pf`) | — | 0–1 | |
 
-Execuções são registradas em `AutomationHistory` (`success`, `logs`, `runAt`). Como `publish()` com QoS 0 não confirma entrega, uma automação registrada como `success: true` significa apenas "chamada feita", não "dispositivo recebeu".
+Pelo menos um entre `energyWh`, `energyTotalWh` e `powerW` é obrigatório.
 
-### Convenção de comando
+O backend grava em `EnergyReading.energyWh` a **energia do intervalo desde a leitura anterior**, que é o único valor somado nas estatísticas (`SUM(energyWh)` = energia do período):
 
-Firmwares devem assinar:
+1. Com `energyWh`: usa o valor como veio.
+2. Com `energyTotalWh`: grava a diferença para o contador anterior. A primeira leitura só estabelece a base (0 Wh). Um contador menor que o anterior é tratado como medidor zerado e conta o que acumulou desde o zero.
+3. Só com `powerW`: integra a potência no tempo (média com a leitura anterior × intervalo). Uma lacuna acima de 5 minutos conta 0.
 
-```
-devices/<id>/command
-```
+> **Payload legado rejeitado.** `{"valueWh": …}` (e os aliases `power`, `watts`, `value`) não são mais aceitos. Era ambíguo: o firmware mandava kWh acumulado, a documentação dizia potência, e a soma inflava os kWh.
 
-Formato publicado pelo backend:
+O carimbo de tempo é sempre o do servidor. Para backfill, use `POST /energy/readings` com `timestamp`.
+
+### `<P>/devices/<slug>/sensor`
 
 ```json
-{ "state": "ON", "temperature": 22, "intensity": 75 }
+{ "kind": "GAS_MQ2", "value": 812, "unit": "adc", "raw": 812 }
+{ "readings": [ { "kind": "GAS_MQ2", "value": 812 }, { "kind": "GAS_MQ135", "value": 640 } ] }
+{ "motion": true }
 ```
 
-`state` é sempre um valor do enum `DeviceStatus` (`ON`/`OFF`/`STANDBY`/`ERROR`). `temperature` e `intensity` só aparecem quando o cliente os enviou na rota de controle.
+| Campo | Observação |
+|-------|------------|
+| `kind` | `GAS_MQ2`, `GAS_MQ135` ou `MOTION`. Pode ser omitido quando o `channel` do device o determina. |
+| `value` | Gás: número ≥ 0 (hoje a leitura bruta do ADC, 0–4095). Movimento: booleano ou 0/1. |
+| `unit`, `raw` | Opcionais. |
 
-O firmware deve confirmar publicando o estado real em `devices/<id>/status` depois de acionar o hardware — é essa confirmação que fecha o ciclo e marca o device como online.
+O que acontece depois de gravar:
+
+- **Gás**: o valor é comparado ao limite (`SensorThreshold`) do device ou, sem ele, ao padrão da organização.
+  - `≥ warnAt` abre um alarme `WARNING`; `≥ alarmAt` abre ou escala para `CRITICAL`.
+  - O alarme só fecha abaixo de `clearAt` (histerese), para não abrir e fechar a cada oscilação.
+  - Abrir, escalar e fechar geram notificação (e push) para ADMIN, COORDINATOR e TECHNICIAN.
+  - O seed cria limites iniciais de 1500/1800/1300 (ADC bruto). Calibre depois do burn-in de 24–48 h dos sensores.
+- **Movimento** (`1`): a sala fica `occupied: true` e `lastMotionAt` é atualizado.
+  - "Sem movimento" (`0`) não esvazia a sala. Ela só fica vazia depois de `Room.vacancyTimeoutSec` (padrão 600 s) sem movimento, porque o HC-SR501 oscila.
+  - A varredura de vacância roda a cada 15 s.
+- Leituras de sensor e mudanças de ocupação reavaliam as automações `CONDITION` da organização.
 
 ---
 
-## 🔄 Eventos WebSocket correspondentes
+## Comandos do backend para o nó
 
-Cada mensagem MQTT processada gera um broadcast Socket.IO via `RealtimeGateway`. Os nomes usam **dois-pontos** — a convenção antiga com ponto (`device.status`, `energy.reading`, `mqtt.raw`) foi removida e não é mais emitida.
+`POST /devices/:id/control`, `PUT /devices/:id/status`, `POST /devices/bulk-control` e as automações publicam em `<P>/<mqttTopic>/command`:
 
-| Origem | Evento WebSocket | Payload |
-|--------|------------------|---------|
-| `devices/+/status` **ou** rotas de controle HTTP | `device:status` | `{ deviceId, status, timestamp }` |
-| `devices/+/online` **ou** `PUT /devices/:id/online` | `device:online` | `{ deviceId, online, timestamp }` |
-| `devices/+/energy` \| `/reading` | `energy:update` | `{ deviceId, power, energy, voltage, current, reading, timestamp }` |
-| tópico sem dispositivo cadastrado | `mqtt:raw` | `{ topic, payload }` |
-| tópico conhecido, sufixo não tratado | `mqtt:raw` | `{ topic, payload, deviceId }` |
-
-Em `energy:update`, `power` e `energy` carregam o mesmo `valueWh` (o schema define o campo como "Wh (or watts at moment depending source)"); o registro completo continua em `reading`.
-
-`device:status` sai tanto do caminho MQTT quanto das rotas HTTP de controle — sem isso, a UI dos demais usuários não acompanharia um comando disparado por outra pessoa.
-
-A emissão usa optional chaining (`this.realtime.server?.emit`): se o gateway ainda não inicializou, o evento é silenciosamente descartado, mas a escrita no banco já aconteceu.
-
-Consumo no front-end:
-
-```javascript
-// `auth` é a forma recomendada no socket.io v4; `query` também é aceita.
-// Sem token, o servidor derruba a conexão logo após o handshake.
-const socket = io('http://localhost:3000', { auth: { token: accessToken } });
-
-socket.on('device:status', ({ deviceId, status }) => { /* ... */ });
-socket.on('device:online', ({ deviceId, online }) => { /* ... */ });
-socket.on('energy:update', ({ deviceId, power }) => { /* ... */ });
-socket.on('mqtt:raw', ({ topic, payload }) => { /* ... */ });
+```json
+{ "state": "ON", "intensity": 75, "temperature": 22 }
 ```
 
----
+`intensity` (0–100, dimmer) e `temperature` (°C, IR) aparecem só quando enviados.
 
-## 🧪 Testando com mosquitto_pub / mosquitto_sub
+- Comando para um canal que não recebe comando (medidor, gás, PIR) é recusado com `400`.
+- O estado é gravado de forma otimista. O firmware deve **confirmar** publicando o estado real em `<P>/devices/<slug>/status`; essa confirmação sobrescreve o estado gravado.
 
-Instalar o cliente:
+### Automações
 
-```bash
-# Fedora
-sudo dnf install mosquitto
+O campo `action` aceita:
 
-# Debian/Ubuntu
-sudo apt install mosquitto-clients
+```json
+{ "deviceId": "<uuid>", "command": "on|off|toggle", "intensity": 50 }
+{ "topic": "devices/<slug>/command", "payload": { "state": "OFF" } }
 ```
 
-Ou usar o cliente que já está dentro do container:
+O `topic` da automação continua relativo: o backend aplica o prefixo da organização da automação ao publicar.
 
-```bash
-docker exec -it autoUniMqtt mosquitto_sub -t 'devices/#' -v
-```
+O alvo precisa ser um device da mesma organização. Isso é validado ao salvar e de novo ao executar.
 
-### Observar todo o tráfego
+Automações `CONDITION` usam `condition` em JSON e disparam só na transição de falso para verdadeiro:
 
-```bash
-mosquitto_sub -h localhost -p 1883 -t 'devices/#' -v
-```
-
-### Simular um dispositivo
-
-Assumindo um `Device` cadastrado com `mqttTopic: "devices/light-101"`:
-
-```bash
-# status
-mosquitto_pub -h localhost -p 1883 -t 'devices/light-101/status' -m 'ON'
-mosquitto_pub -h localhost -p 1883 -t 'devices/light-101/status' -m '{"status":"STANDBY"}'
-
-# leitura energética
-mosquitto_pub -h localhost -p 1883 -t 'devices/light-101/energy' \
-  -m '{"valueWh":150.5,"voltage":220,"current":0.68}'
-
-# heartbeat
-mosquitto_pub -h localhost -p 1883 -t 'devices/light-101/online' -m 'true'
-```
-
-### Verificar o efeito
-
-```bash
-# logs do backend (nível debug mostra cada mensagem processada)
-docker compose logs -f app | grep -i mqtt
-
-# estado no banco
-docker exec -it autoUniDb psql -U postgres -d autounidb \
-  -c 'SELECT id, name, status, "lastSeen" FROM "Device" ORDER BY "lastSeen" DESC NULLS LAST LIMIT 5;'
-
-docker exec -it autoUniDb psql -U postgres -d autounidb \
-  -c 'SELECT "deviceId", "valueWh", voltage, current, timestamp FROM "EnergyReading" ORDER BY timestamp DESC LIMIT 5;'
-```
-
-### Simular um comando indo para o dispositivo
-
-```bash
-# terminal 1 — no papel do ESP32
-mosquitto_sub -h localhost -p 1883 -t 'devices/light-101/command' -v
-
-# terminal 2 — no papel do backend
-mosquitto_pub -h localhost -p 1883 -t 'devices/light-101/command' -m '{"state":"ON"}'
+```json
+{ "type": "occupancy", "roomId": "<uuid>", "occupied": false, "forSeconds": 600 }
+{ "type": "sensor", "deviceId": "<uuid>", "kind": "GAS_MQ2", "op": "gte", "value": 1800, "maxAgeSeconds": 300 }
 ```
 
 ---
 
-## 🔌 Exemplo ESP32
+## Eventos WebSocket
 
-Firmware mínimo cobrindo comando, status e telemetria. Requer `PubSubClient`.
+Todos vão **só para a sala da organização** do device; um socket de outra organização não os recebe.
 
-```cpp
-#include <WiFi.h>
-#include <PubSubClient.h>
+| Origem | Evento | Payload |
+|--------|--------|---------|
+| `/status` ou rotas de controle | `device:status` | `{ deviceId, status, timestamp }` |
+| `/online`, LWT do nó ou `PUT /devices/:id/online` | `device:online` | `{ deviceId, online, timestamp }` |
+| `org/+/nodes/+/online` | `node:online` | `{ nodeId, online, timestamp }` |
+| `/energy` | `energy:update` | `{ deviceId, power, energy, energyTotalWh, voltage, current, frequency, powerFactor, reading, timestamp }` |
+| `/sensor` | `sensor:update` | `{ deviceId, roomId, kind, value, unit, raw, timestamp }` |
+| alarme de gás | `sensor:alarm` | `{ state: opened\|escalated\|cleared\|acknowledged, alarm, deviceId, roomId }` |
+| ocupação | `room:occupancy` | `{ roomId, occupied, timestamp }` |
 
-const char* WIFI_SSID     = "sua-rede";
-const char* WIFI_PASSWORD = "sua-senha";
+Em `energy:update`, `power` é a potência instantânea (W) e `energy` é a energia do intervalo (Wh). O evento `mqtt:raw` foi removido.
 
-// IP do host onde o docker compose está rodando
-const char* MQTT_HOST = "192.168.77.34";
-const int   MQTT_PORT = 1883;
-
-// Precisa bater com Device.mqttTopic cadastrado no backend
-const char* DEVICE_TOPIC = "devices/light-101";
-
-const int RELAY_PIN = 2;
-
-WiFiClient espClient;
-PubSubClient client(espClient);
-
-String topicFor(const char* suffix) {
-  return String(DEVICE_TOPIC) + "/" + suffix;
-}
-
-void publishStatus(const char* status) {
-  client.publish(topicFor("status").c_str(), status, true); // retain
-}
-
-void callback(char* topic, byte* payload, unsigned int length) {
-  String message;
-  for (unsigned int i = 0; i < length; i++) {
-    message += (char)payload[i];
-  }
-
-  // Aceita tanto "ON" quanto {"state":"ON"}
-  bool turnOn = message.indexOf("ON") >= 0 && message.indexOf("OFF") < 0;
-
-  digitalWrite(RELAY_PIN, turnOn ? HIGH : LOW);
-  publishStatus(turnOn ? "ON" : "OFF");   // confirma o estado real
-}
-
-void reconnect() {
-  while (!client.connected()) {
-    String clientId = String("esp32-") + String((uint32_t)ESP.getEfuseMac(), HEX);
-
-    // Last Will: o broker publica offline se o ESP cair sem avisar
-    if (client.connect(clientId.c_str(), nullptr, nullptr,
-                       topicFor("online").c_str(), 1, true, "false")) {
-      client.publish(topicFor("online").c_str(), "true", true);
-      client.subscribe(topicFor("command").c_str());
-      publishStatus(digitalRead(RELAY_PIN) ? "ON" : "OFF");
-    } else {
-      delay(5000);
-    }
-  }
-}
-
-void setup() {
-  pinMode(RELAY_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, LOW);
-
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  while (WiFi.status() != WL_CONNECTED) delay(500);
-
-  client.setServer(MQTT_HOST, MQTT_PORT);
-  client.setCallback(callback);
-}
-
-void loop() {
-  if (!client.connected()) reconnect();
-  client.loop();
-
-  // Telemetria a cada 30s
-  static unsigned long lastPublish = 0;
-  if (millis() - lastPublish > 30000) {
-    lastPublish = millis();
-
-    float voltage = readVoltage();
-    float current = readCurrent();
-    float power   = voltage * current;
-
-    char payload[96];
-    snprintf(payload, sizeof(payload),
-             "{\"valueWh\":%.2f,\"voltage\":%.2f,\"current\":%.3f}",
-             power, voltage, current);
-
-    client.publish(topicFor("energy").c_str(), payload);
-  }
-}
-```
-
-Pontos de atenção no firmware:
-
-- **Last Will and Testament** — configurado no `connect()`, faz o broker publicar `false` em `devices/<id>/online` se o ESP32 cair sem desconectar. Sem LWT o backend só descobre a queda pelo `lastSeen` envelhecendo.
-- **`retain: true` no status** — garante que um backend reiniciando receba o estado atual imediatamente, em vez de esperar o próximo evento.
-- **`clientId` único** — dois clientes com o mesmo ID fazem o broker desconectar um deles em loop.
-- **Confirme o estado real, não o comando recebido** — publique o status depois de acionar o relé, refletindo o hardware.
-- **`valueWh` vs. potência instantânea** — o exemplo publica watts no campo `valueWh`, seguindo o comentário do schema (`"Wh (or watts at moment depending source)"`). Mantenha a unidade consistente entre dispositivos, senão as agregações de `/energy/stats` misturam grandezas.
+Conexão: `io(url, { auth: { token: <accessToken> } })`. Refresh token ou token sem organização é desconectado.
 
 ---
 
-## 🐛 Troubleshooting
+## Testando com mosquitto_pub / mosquitto_sub
 
-### `MQTT_URL not configured. MQTT features disabled.`
-
-`MQTT_URL` ausente ou vazia. Não é erro fatal — a aplicação sobe sem MQTT. Rodando local, defina no `.env`:
-
-```env
-MQTT_URL=mqtt://localhost:1883
-```
-
-O serviço loga o valor lido na inicialização (`MQTT_URL value: "..."`), o que ajuda a confirmar se o `.env` chegou ao processo.
-
-### `ECONNREFUSED` / `MQTT connection error`
+Com um nó cadastrado (`node-67f06fc2`, senha da resposta de `POST /nodes`) e devices `devices/pzem-a206` (`ENERGY_METER`), `devices/mq2-a206` (`GAS_MQ2`) e `devices/relay1-a206` (`RELAY`) atribuídos a ele:
 
 ```bash
-# broker está de pé?
-docker compose ps mqtt
+U=node-67f06fc2; P='<senha>'; PFX=org/00000000-0000-0000-0000-000000000001   # topicPrefix
 
-# a porta responde?
-docker exec autoUniMqtt netstat -tln | grep 1883
+# presença do nó
+mosquitto_pub -h localhost -u $U -P "$P" -t $PFX/nodes/$U/online -m true -r
 
-# de dentro do container do app, o hostname resolve?
-docker exec autoUniApi getent hosts mqtt
+# energia (contador acumulado do PZEM, em Wh)
+mosquitto_pub -h localhost -u $U -P "$P" -t $PFX/devices/pzem-a206/energy \
+  -m '{"powerW":152.4,"energyTotalWh":123456.7,"voltage":220.1,"current":0.69,"frequency":60,"powerFactor":0.95}'
+
+# gás
+mosquitto_pub -h localhost -u $U -P "$P" -t $PFX/devices/mq2-a206/sensor -m '{"value":812,"unit":"adc"}'
+
+# receber comandos do relé
+mosquitto_sub -h localhost -u $U -P "$P" -t $PFX/devices/relay1-a206/command -v
 ```
 
-Causa comum: usar `mqtt://localhost:1883` no `MQTT_URL` do container `app`. Dentro do compose, `localhost` é o próprio container. Use `mqtt://mqtt:1883`.
-
-O cliente reconecta sozinho a cada 5s, então o backend se recupera quando o broker voltar — sem restart.
-
-### `No device found for topic devices/xxx/status`
-
-O `Device.mqttTopic` não casa. Confira o cadastro:
+Observar o tráfego como backend (o administrador pode assinar tudo):
 
 ```bash
-docker exec -it autoUniDb psql -U postgres -d autounidb \
-  -c 'SELECT id, name, "mqttTopic" FROM "Device" WHERE "mqttTopic" IS NOT NULL;'
+mosquitto_sub -h localhost -u "$MQTT_USERNAME" -P "$MQTT_PASSWORD" -t 'org/#' -v
 ```
 
-Grave o **tópico base** (`devices/light-101`), sem o sufixo. Ver [Como um tópico vira um dispositivo](#-como-um-tópico-vira-um-dispositivo).
-
-Enquanto não casar, a mensagem ainda aparece no WebSocket como `mqtt:raw` — útil para ler o identificador que o dispositivo está usando de fato.
-
-### Mensagem chega, mas o status não muda
-
-Quase sempre é valor fora do enum `DeviceStatus`. Procure `Error handling MQTT message` nos logs do `app`. Aceitos: `ON`, `OFF`, `STANDBY`, `ERROR` — maiúsculas, exatamente.
-
-### Leitura gravada com `voltage`/`current` nulos
-
-Comportamento esperado quando o valor enviado é `0` (ver [Formatos de payload](#-formatos-de-payload)). Não é perda de dados no transporte.
-
-### Nada acontece ao conectar na porta 9001
-
-Não há listener em 9001 — o mapeamento no compose é herança de um config que não existe. Ver [Habilitando WebSocket](#habilitando-websocket-opcional).
-
-### Um dispositivo desconecta em loop
-
-Dois clientes com o mesmo `clientId`. O broker mantém apenas a conexão mais recente e derruba a anterior, que reconecta e derruba a nova, indefinidamente. Gere o `clientId` a partir do MAC.
+Um publish fora da ACL (outro device, outra organização, tópico sem `org/<id>/`, ou sufixo que o canal não produz) é descartado pelo broker em silêncio: não aparece no `mosquitto_sub` acima.
 
 ---
 
-## 🔒 Endurecendo o broker
+## Troubleshooting
 
-Para qualquer ambiente que não seja LAN isolada:
+**`Connection Refused: not authorised`**
+: Usuário ou senha errados, ou cliente anônimo. Para um nó, gere nova senha com `POST /nodes/:id/rotate-credentials`.
 
-**1. Desligar acesso anônimo**
+**`O broker não respondeu ao dynamic-security`**
+: O plugin não carregou. Confira `docker logs autoUniMqtt` (deve aparecer `Loading plugin: /usr/lib/mosquitto_dynamic_security.so`) e se a imagem é `2.0.20`.
 
-```conf
-# mosquitto/config/mosquitto.conf
-listener 1883
-allow_anonymous false
-password_file /mosquitto/config/passwd
-```
+**`/mosquitto/init.sh: Permission denied`**
+: Em hosts com SELinux (Fedora), as montagens precisam do sufixo `:z`, que o compose já usa.
 
-```bash
-docker exec -it autoUniMqtt mosquitto_passwd -c /mosquitto/config/passwd autouni
-docker compose restart mqtt
-```
+**Publish chega ao broker, mas nada é gravado**
+: Veja nos logs do backend:
+  - `Rejected MQTT message …`: o payload não cumpre o contrato, e o motivo vem na mensagem.
+  - `No device registered for org … devices/…`: o slug não corresponde a nenhum `Device.mqttTopic` **daquela organização**.
+  - Nenhum log: o broker barrou pela ACL. Confira o `nodeId` e o `channel` do device, ou force `POST /nodes/:id/sync-acl`.
 
-Depois adicione ao serviço `app` no `docker-compose.yml` (elas não estão lá hoje):
-
-```yaml
-MQTT_USERNAME: ${MQTT_USERNAME}
-MQTT_PASSWORD: ${MQTT_PASSWORD}
-```
-
-**2. Não publicar a porta externamente**
-
-Se apenas o backend fala com o broker, remova o bloco `ports:` do serviço `mqtt` — a rede `autouni-network` já permite o acesso interno via hostname `mqtt`. Dispositivos na LAN continuam precisando da porta publicada.
-
-**3. ACLs por dispositivo**
-
-```conf
-acl_file /mosquitto/config/acl
-```
-
-```
-user esp32-light-101
-topic write devices/light-101/#
-topic read devices/light-101/command
-```
-
-**4. TLS (`mqtts://`)**
-
-Configure `cafile` / `certfile` / `keyfile` no listener 8883 e use `MQTT_URL=mqtts://...`. Note que o `PubSubClient` do ESP32 exige `WiFiClientSecure` e o certificado embarcado.
+**Nó desconecta logo depois de uma alteração de device**
+: Comportamento do dynamic-security ao mudar a ACL. O firmware deve reconectar.
 
 ---
 
-## ⚠️ Limitações conhecidas
+## Limitações conhecidas
 
-As lacunas que existiam entre a documentação e o código foram fechadas: `POST /devices/:id/control` e `POST /devices/bulk-control` existem, as rotas de controle publicam em `devices/<id>/command`, `Device.online` é uma coluna real e os eventos WebSocket foram padronizados em dois-pontos.
-
-O que **ainda** vale saber:
-
-| Item | Situação |
-|------|----------|
-| Porta 9001 | Publicada no host, mas sem listener no broker — ver [Habilitando WebSocket](#habilitando-websocket-opcional). |
-| `MQTT_USERNAME` / `MQTT_PASSWORD` | Lidas pelo `MqttService`, mas **não** repassadas ao container `app` no `docker-compose.yml`. |
-| Timeout de `online` | Nada marca um device como offline por inatividade. `online` só muda quando chega uma mensagem MQTT (ou pelo override HTTP). Um device que simplesmente some fica `online: true` com `lastSeen` envelhecendo — a menos que publique LWT. |
-| `device:update` | O frontend tem um listener para esse evento, mas nada o emite. Mudanças por `PUT /devices/:id` não geram broadcast. |
-
-Limitações estruturais do transporte:
-
-- **Sem QoS acima de 0 nas assinaturas padrão.** Mensagens publicadas durante um restart do backend são perdidas.
-- **Sem sessão persistente.** O cliente conecta com sessão limpa; nada é enfileirado no broker enquanto o backend está fora.
-- **`Device.mqttTopic` não é `@unique`.** Duplicatas resolvem de forma não determinística via `findFirst`.
-- **Erros de processamento são engolidos.** O `try/catch` de `handleMessage` loga e segue; não há dead-letter nem retry.
-- **`publish()` falha em silêncio** quando desconectado — daí as rotas de controle checarem `isConnected()` antes e devolverem `pending: false` em vez de mentir para a UI.
-- **Confirmação não é garantida.** Como QoS 0 não confirma entrega, `pending: true` significa "saiu daqui", não "o aparelho recebeu". A única confirmação real é o device publicar de volta em `devices/<id>/status`.
-
-O próximo passo natural é um job periódico que marque `online = false` para devices cujo `lastSeen` ultrapassou o intervalo de heartbeat esperado — a coluna já está pronta para isso.
-
----
-
-## 📚 Referências
-
-- [README.md](./README.md) — visão geral do projeto
-- [USO.md](./USO.md) — exemplos de uso da API
-- [ROADMAP.md](./ROADMAP.md) — evolução planejada
-- [Eclipse Mosquitto](https://mosquitto.org/documentation/)
-- [MQTT 5 (mqtt.js)](https://github.com/mqttjs/MQTT.js)
-- [PubSubClient (Arduino)](https://github.com/knolleary/pubsubclient)
+- **Sem TLS.** Senhas trafegam em claro na LAN. Para rede não isolada, configure um listener 8883 com certificado e use `mqtts://`.
+- **Sem timeout de `online` por inatividade.** A queda é detectada pelo LWT do nó. Sem LWT, `lastSeen` envelhece, mas `online` não muda.
+- **Comando sem confirmação garantida.** `pending: true` significa "saiu do backend". A confirmação real é o `/status` do firmware.

@@ -5,6 +5,7 @@ import {
   INotificationsRepository,
   CreateNotificationData,
 } from '../interfaces/notifications.interface';
+import { withTenant } from '../../../common/tenant/tenant-context';
 
 @Injectable()
 export class NotificationsRepository implements INotificationsRepository {
@@ -12,7 +13,7 @@ export class NotificationsRepository implements INotificationsRepository {
 
   async create(data: CreateNotificationData): Promise<Notification> {
     return this.prisma.notification.create({
-      data,
+      data: withTenant(data),
     });
   }
 

@@ -12,6 +12,7 @@ import {
   countBuildingDevices,
   BuildingLike,
 } from '../utils/building-energy.utils';
+import { withTenant } from '../../../common/tenant/tenant-context';
 
 @Injectable()
 export class BuildingsRepository implements IBuildingsRepository {
@@ -19,7 +20,7 @@ export class BuildingsRepository implements IBuildingsRepository {
 
   async create(data: CreateBuildingData): Promise<Building> {
     return this.prisma.building.create({
-      data,
+      data: withTenant(data),
     });
   }
 

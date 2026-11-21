@@ -4,6 +4,7 @@ import { DevicesService } from './devices.service';
 import { DevicesRepository } from '../repository/devices.repository';
 import { MqttService } from '../../mqtt/service/mqtt.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
+import { NodesService } from '../../nodes/service/nodes.service';
 import { DeviceCommand, DeviceStatus } from '../interfaces/devices.interface';
 
 describe('DevicesService', () => {
@@ -14,6 +15,7 @@ describe('DevicesService', () => {
 
   const mockDevice = {
     id: 'device-uuid-1',
+    organizationId: '00000000-0000-0000-0000-000000000001',
     roomId: 'room-uuid-1',
     room: 'H201',
     name: 'Luz Principal',
@@ -67,7 +69,12 @@ describe('DevicesService', () => {
         },
         {
           provide: RealtimeGateway,
-          useValue: { server: { emit } },
+          // Eventos vão para a sala da organização; o mock repassa só (evento, payload).
+          useValue: { emitToOrganization: (_org: string, event: string, payload: unknown) => emit(event, payload) },
+        },
+        {
+          provide: NodesService,
+          useValue: { syncAclSafely: jest.fn() },
         },
       ],
     }).compile();
@@ -213,7 +220,7 @@ describe('DevicesService', () => {
 
       await service.updateStatus('device-uuid-1', DeviceStatus.ON);
 
-      expect(mqttService.publish).toHaveBeenCalledWith('devices/light-101/command', {
+      expect(mqttService.publish).toHaveBeenCalledWith('org/00000000-0000-0000-0000-000000000001/devices/light-101/command', {
         state: DeviceStatus.ON,
       });
       expect(emit).toHaveBeenCalledWith(
@@ -249,7 +256,7 @@ describe('DevicesService', () => {
         command: DeviceCommand.ON,
       });
 
-      expect(mqttService.publish).toHaveBeenCalledWith('devices/light-101/command', {
+      expect(mqttService.publish).toHaveBeenCalledWith('org/00000000-0000-0000-0000-000000000001/devices/light-101/command', {
         state: DeviceStatus.ON,
       });
       expect(repository.updateStatus).toHaveBeenCalledWith('device-uuid-1', DeviceStatus.ON);
@@ -267,7 +274,7 @@ describe('DevicesService', () => {
         intensity: 80,
       });
 
-      expect(mqttService.publish).toHaveBeenCalledWith('devices/light-101/command', {
+      expect(mqttService.publish).toHaveBeenCalledWith('org/00000000-0000-0000-0000-000000000001/devices/light-101/command', {
         state: DeviceStatus.ON,
         temperature: 22,
         intensity: 80,
@@ -307,7 +314,7 @@ describe('DevicesService', () => {
 
         expect(result.status).toBe('OFF');
         expect(mqttService.publish).toHaveBeenCalledWith(
-          'devices/light-101/command',
+          'org/00000000-0000-0000-0000-000000000001/devices/light-101/command',
           { state: DeviceStatus.OFF },
         );
       });

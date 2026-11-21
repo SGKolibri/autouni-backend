@@ -3,8 +3,10 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { AutomationsService } from './service/automations.service';
 import { AutomationsRepository } from './repository/automations.repository';
 import { AutomationsController } from './controller/automations.controller';
+import { DevicesModule } from '../devices/devices.module';
 
 @Module({
+  imports: [DevicesModule],
   controllers: [AutomationsController],
   providers: [AutomationsService, AutomationsRepository, PrismaService],
   exports: [AutomationsService, AutomationsRepository],

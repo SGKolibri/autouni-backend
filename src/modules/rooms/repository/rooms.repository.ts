@@ -6,6 +6,7 @@ import {
   CreateRoomData,
   UpdateRoomData,
 } from '../interfaces/rooms.interface';
+import { withTenant } from '../../../common/tenant/tenant-context';
 
 @Injectable()
 export class RoomsRepository implements IRoomsRepository {
@@ -13,7 +14,7 @@ export class RoomsRepository implements IRoomsRepository {
 
   async create(data: CreateRoomData): Promise<Room> {
     return this.prisma.room.create({
-      data,
+      data: withTenant(data),
     });
   }
 

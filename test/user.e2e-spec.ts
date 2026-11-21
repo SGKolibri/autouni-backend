@@ -78,8 +78,8 @@ describe('User Module (e2e)', () => {
   // POST /users
   // ============================================================
   describe('POST /users', () => {
-    it('should return 201 on valid create (non-ADMIN, no password)', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(null);
+    it('should return 201 on valid create (non-ADMIN)', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(null);
       mockPrisma.user.create.mockResolvedValue({
         ...MOCK_USER,
         ...VALID_CREATE_USER_DTO,
@@ -96,7 +96,7 @@ describe('User Module (e2e)', () => {
     });
 
     it('should return 201 on valid create (ADMIN with password)', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(null);
+      mockPrisma.user.findFirst.mockResolvedValue(null);
       mockPrisma.user.create.mockResolvedValue({
         ...MOCK_ADMIN_USER,
         ...VALID_CREATE_ADMIN_DTO,
@@ -111,7 +111,7 @@ describe('User Module (e2e)', () => {
       expect(response.body).toHaveProperty('email', VALID_CREATE_ADMIN_DTO.email);
     });
 
-    it('should return 400 when role is ADMIN without password', async () => {
+    it('should return 400 when password is missing', async () => {
       await request(app.getHttpServer())
         .post('/users')
         .set('Authorization', `Bearer ${authToken}`)
@@ -119,18 +119,27 @@ describe('User Module (e2e)', () => {
         .expect(400);
     });
 
-    it('should return 400 when email already exists', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(MOCK_USER);
+    it('should return 409 when email already exists in the organization', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(MOCK_USER);
 
       await request(app.getHttpServer())
         .post('/users')
         .set('Authorization', `Bearer ${authToken}`)
         .send(VALID_CREATE_USER_DTO)
-        .expect(400);
+        .expect(409);
+    });
+
+    it('should return 403 when a non-ADMIN creates users', async () => {
+      const coordinator = generateTestToken(jwtService, { role: 'COORDINATOR' });
+      await request(app.getHttpServer())
+        .post('/users')
+        .set('Authorization', `Bearer ${coordinator}`)
+        .send(VALID_CREATE_USER_DTO)
+        .expect(403);
     });
 
     it('should hash password when provided', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(null);
+      mockPrisma.user.findFirst.mockResolvedValue(null);
       mockPrisma.user.create.mockResolvedValue(MOCK_USER);
 
       await request(app.getHttpServer())
@@ -277,14 +286,24 @@ describe('User Module (e2e)', () => {
         .expect(404);
     });
 
-    it('should return 400 when upgrading to ADMIN without password and user has no password', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(MOCK_USER_WITHOUT_PASSWORD);
+    it('should return 400 when demoting the last ADMIN', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue(MOCK_ADMIN_USER);
+      mockPrisma.user.count.mockResolvedValue(1);
 
       await request(app.getHttpServer())
-        .put(`/users/${MOCK_USER_WITHOUT_PASSWORD.id}`)
+        .put(`/users/${MOCK_ADMIN_USER.id}`)
         .set('Authorization', `Bearer ${authToken}`)
-        .send({ role: 'ADMIN' })
+        .send({ role: 'VIEWER' })
         .expect(400);
+    });
+
+    it('should return 403 when a non-ADMIN changes their own role', async () => {
+      const viewer = generateTestToken(jwtService, { role: 'VIEWER', sub: MOCK_USER.id });
+      await request(app.getHttpServer())
+        .put(`/users/${MOCK_USER.id}`)
+        .set('Authorization', `Bearer ${viewer}`)
+        .send({ role: 'ADMIN' })
+        .expect(403);
     });
 
     it('should hash password when updating', async () => {
@@ -351,12 +370,12 @@ describe('User Module (e2e)', () => {
   describe('UserService (direct)', () => {
     it('findByEmail should delegate to repository', async () => {
       const userService = app.get(UserService);
-      mockPrisma.user.findUnique.mockResolvedValue(MOCK_USER);
+      mockPrisma.user.findFirst.mockResolvedValue(MOCK_USER);
 
       const result = await userService.findByEmail('joao@email.com');
 
       expect(result).toEqual(MOCK_USER);
-      expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
         where: { email: 'joao@email.com' },
       });
     });
@@ -383,12 +402,12 @@ describe('User Module (e2e)', () => {
   describe('PrismaUserRepository (direct)', () => {
     it('findByCpf should query by cpf', async () => {
       const repo = app.get(PrismaUserRepository);
-      mockPrisma.user.findUnique.mockResolvedValue(MOCK_USER);
+      mockPrisma.user.findFirst.mockResolvedValue(MOCK_USER);
 
       const result = await repo.findByCpf('12345678901');
 
       expect(result).toEqual(MOCK_USER);
-      expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({
+      expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
         where: { cpf: '12345678901' },
       });
     });

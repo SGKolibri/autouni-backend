@@ -2,12 +2,16 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   Logger,
 } from '@nestjs/common';
 import { Device } from '@prisma/client';
 import { DevicesRepository } from '../repository/devices.repository';
 import { MqttService } from '../../mqtt/service/mqtt.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
+import { orgTopic } from '../../mqtt/topics';
+import { NodesService } from '../../nodes/service/nodes.service';
+import { COMMANDABLE_CHANNELS } from '../../telemetry/channel-capabilities';
 import { CreateDeviceDto } from '../dto/create-device.dto';
 import { UpdateDeviceDto } from '../dto/update-device.dto';
 import { ControlDeviceDto } from '../dto/control-device.dto';
@@ -28,17 +32,39 @@ export class DevicesService {
     private readonly devicesRepository: DevicesRepository,
     private readonly mqttService: MqttService,
     private readonly realtime: RealtimeGateway,
+    private readonly nodes: NodesService,
   ) {}
 
-  async create(createDeviceDto: CreateDeviceDto): Promise<Device> {
-    try {
-      return await this.devicesRepository.create(createDeviceDto);
-    } catch (error) {
-      if (error.code === 'P2003') {
-        throw new BadRequestException('Room not found or invalid roomId');
-      }
-      throw error;
+  // Prisma P2002 em mqttTopic / P2003 em FK viram erros de cliente.
+  private translateWriteError(error: any): never {
+    if (error?.code === 'P2002') {
+      throw new ConflictException('mqttTopic já está em uso por outro dispositivo da organização');
     }
+    if (error?.code === 'P2003') {
+      throw new BadRequestException('Room not found or invalid roomId');
+    }
+    throw error;
+  }
+
+  // Device em nó precisa declarar o canal: é dele que sai a ACL do broker.
+  private assertChannelForNode(dto: { nodeId?: string | null; channel?: string | null }, current?: Device) {
+    const nodeId = dto.nodeId !== undefined ? dto.nodeId : current?.nodeId;
+    const channel = dto.channel !== undefined ? dto.channel : current?.channel;
+    if (nodeId && !channel) {
+      throw new BadRequestException('Informe channel ao vincular o dispositivo a um nó');
+    }
+  }
+
+  async create(createDeviceDto: CreateDeviceDto): Promise<Device> {
+    this.assertChannelForNode(createDeviceDto);
+    let device: Device;
+    try {
+      device = await this.devicesRepository.create(createDeviceDto);
+    } catch (error) {
+      this.translateWriteError(error);
+    }
+    await this.nodes.syncAclSafely(device.nodeId);
+    return device;
   }
 
   async findAll(filters?: FindDevicesFilters): Promise<Device[]> {
@@ -64,21 +90,25 @@ export class DevicesService {
   }
 
   async update(id: string, updateDeviceDto: UpdateDeviceDto): Promise<Device> {
-    await this.findById(id); // Validates existence
-    
+    const current = await this.findById(id);
+    this.assertChannelForNode(updateDeviceDto, current);
+
+    let updated: Device;
     try {
-      return await this.devicesRepository.update(id, updateDeviceDto);
+      updated = await this.devicesRepository.update(id, updateDeviceDto);
     } catch (error) {
-      if (error.code === 'P2003') {
-        throw new BadRequestException('Room not found or invalid roomId');
-      }
-      throw error;
+      this.translateWriteError(error);
     }
+    // Mudou de nó, de canal ou de tópico: os dois nós envolvidos recalculam a ACL.
+    await this.nodes.syncAclSafely(current.nodeId, updated.nodeId);
+    return updated;
   }
 
   async delete(id: string): Promise<Device> {
-    await this.findById(id); // Validates existence
-    return this.devicesRepository.delete(id);
+    const current = await this.findById(id);
+    const deleted = await this.devicesRepository.delete(id);
+    await this.nodes.syncAclSafely(current.nodeId);
+    return deleted;
   }
 
   async updateStatus(id: string, status: DeviceStatus): Promise<Device> {
@@ -97,7 +127,7 @@ export class DevicesService {
 
     const updated = await this.devicesRepository.updateOnlineStatus(id, online);
 
-    this.realtime.server?.emit('device:online', {
+    this.realtime.emitToOrganization(updated.organizationId, 'device:online', {
       deviceId: updated.id,
       online: updated.online,
       timestamp: new Date(),
@@ -190,6 +220,9 @@ export class DevicesService {
     status: DeviceStatus,
     extras: { temperature?: number; intensity?: number } = {},
   ): boolean {
+    if (device.channel && !COMMANDABLE_CHANNELS.includes(device.channel)) {
+      throw new BadRequestException(`O canal ${device.channel} não recebe comandos`);
+    }
     if (!device.mqttTopic) {
       this.logger.warn(
         `Device ${device.id} has no mqttTopic; state persisted without publishing`,
@@ -204,7 +237,7 @@ export class DevicesService {
       return false;
     }
 
-    this.mqttService.publish(`${device.mqttTopic}/command`, {
+    this.mqttService.publish(orgTopic(device.organizationId, `${device.mqttTopic}/command`), {
       state: status,
       ...(extras.temperature !== undefined ? { temperature: extras.temperature } : {}),
       ...(extras.intensity !== undefined ? { intensity: extras.intensity } : {}),
@@ -214,7 +247,7 @@ export class DevicesService {
   }
 
   private emitStatus(device: Device): void {
-    this.realtime.server?.emit('device:status', {
+    this.realtime.emitToOrganization(device.organizationId, 'device:status', {
       deviceId: device.id,
       status: device.status,
       timestamp: new Date(),

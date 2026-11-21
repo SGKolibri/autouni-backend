@@ -9,7 +9,8 @@ describe('EnergyService', () => {
   const mockReading = {
     id: 'reading-uuid-1',
     deviceId: 'device-uuid-1',
-    valueWh: 150.5,
+    energyWh: 150.5,
+    powerW: 1200,
     voltage: 220,
     current: 0.68,
     timestamp: new Date('2025-01-01'),
@@ -32,6 +33,7 @@ describe('EnergyService', () => {
           provide: EnergyRepository,
           useValue: {
             createReading: jest.fn(),
+            findLastReading: jest.fn().mockResolvedValue(null),
             findReadingsByDevice: jest.fn(),
             findReadingsByRoom: jest.fn(),
             aggregateByDevice: jest.fn(),
@@ -55,12 +57,32 @@ describe('EnergyService', () => {
   });
 
   describe('createReading', () => {
-    it('should create and return energy reading', async () => {
+    it('should store an explicit interval energy as-is', async () => {
       repository.createReading.mockResolvedValue(mockReading as any);
-      const data = { deviceId: 'device-uuid-1', valueWh: 150.5, voltage: 220, current: 0.68 };
-      const result = await service.createReading(data);
+      const result = await service.createReading({ deviceId: 'device-uuid-1', energyWh: 150.5, voltage: 220, current: 0.68 });
       expect(result).toEqual(mockReading);
-      expect(repository.createReading).toHaveBeenCalledWith(data);
+      expect(repository.createReading).toHaveBeenCalledWith(
+        expect.objectContaining({ deviceId: 'device-uuid-1', energyWh: 150.5, voltage: 220, current: 0.68 }),
+      );
+    });
+
+    it('should derive interval energy from the meter accumulator', async () => {
+      repository.findLastReading.mockResolvedValue({ energyTotalWh: 1000, powerW: null, timestamp: new Date() } as any);
+      await service.createReading({ deviceId: 'device-uuid-1', energyTotalWh: 1004 });
+      expect(repository.createReading).toHaveBeenCalledWith(expect.objectContaining({ energyWh: 4, energyTotalWh: 1004 }));
+    });
+
+    it('should reject a reading without energy or power', async () => {
+      await expect(service.createReading({ deviceId: 'device-uuid-1', voltage: 220 })).rejects.toThrow(/energyWh/);
+      expect(repository.createReading).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('ingestMeasurement', () => {
+    it('should refuse energy from a channel that does not measure energy', async () => {
+      await expect(
+        service.ingestMeasurement({ id: 'd', channel: 'GAS_MQ2' } as any, { powerW: 10 }),
+      ).rejects.toThrow(/não produz leitura de energia/);
     });
   });
 
