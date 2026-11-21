@@ -27,6 +27,9 @@ async function bootstrap() {
     }),
   );
 
+  // URL pública da API (no Docker o container escuta na 3000, mas o host expõe a 10000)
+  const publicUrl = (process.env.APP_URL ?? 'http://localhost:10000').replace(/\/$/, '');
+
   // Swagger configuration
   const config = new DocumentBuilder()
     .setTitle('AutoUni API')
@@ -35,8 +38,8 @@ async function bootstrap() {
     )
     .setVersion('1.0.0')
     .setLicense('MIT', 'https://opensource.org/licenses/MIT')
-    .addServer('http://localhost:3000', 'Desenvolvimento Local')
-    .addServer('http://localhost:3000', 'Produção')
+    .addServer(publicUrl, 'Servidor configurado (APP_URL)')
+    .addServer('/', 'Origem atual')
     .addBearerAuth(
       {
         type: 'http',
@@ -85,9 +88,9 @@ async function bootstrap() {
   console.log('');
   console.log('🚀 AutoUni Backend is running!');
   console.log('');
-  console.log(`📡 API: http://localhost:${process.env.PORT ?? 3000}`);
-  console.log(`📚 Swagger Docs: http://localhost:${process.env.PORT ?? 3000}/docs`);
-  console.log(`🔌 WebSocket: ws://localhost:${process.env.PORT ?? 3000}`);
+  console.log(`📡 API: ${publicUrl}`);
+  console.log(`📚 Swagger Docs: ${publicUrl}/docs`);
+  console.log(`🔌 WebSocket: ${publicUrl.replace(/^http/, 'ws')}`);
   console.log('');
 }
 bootstrap();

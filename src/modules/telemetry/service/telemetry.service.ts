@@ -110,6 +110,7 @@ export class TelemetryService {
           value,
           threshold: transition.threshold,
           startedAt: now,
+          lastNotifiedAt: now,
         });
         this.emitAlarm(device, alarm, 'opened');
         await this.notifyAlarm(device, alarm, 'opened');
@@ -121,6 +122,7 @@ export class TelemetryService {
           threshold: transition.threshold,
           value,
           peakValue: Math.max(open!.peakValue, value),
+          lastNotifiedAt: now,
         });
         this.emitAlarm(device, alarm, 'escalated');
         await this.notifyAlarm(device, alarm, 'escalated');
@@ -160,18 +162,28 @@ export class TelemetryService {
   private async notifyAlarm(
     device: Device,
     alarm: SensorAlarm,
-    state: 'opened' | 'escalated' | 'cleared',
+    state: 'opened' | 'escalated' | 'cleared' | 'reminder',
+    now = new Date(),
   ) {
     const label = KIND_LABEL[alarm.kind];
     const recipients = await this.repository.findAlarmRecipients();
+    const severity = alarm.level === AlarmLevel.CRITICAL ? 'Alarme' : 'Atenção';
+    const activeMinutes = Math.max(
+      1,
+      Math.round((now.getTime() - alarm.startedAt.getTime()) / 60000),
+    );
     const title =
       state === 'cleared'
         ? `Normalizado: ${label} em ${device.name}`
-        : `${alarm.level === AlarmLevel.CRITICAL ? 'Alarme' : 'Atenção'}: ${label} em ${device.name}`;
+        : state === 'reminder'
+          ? `Lembrete — ${severity} ainda ativo: ${label} em ${device.name}`
+          : `${severity}: ${label} em ${device.name}`;
     const message =
       state === 'cleared'
         ? `Leitura voltou a ${alarm.value} (pico ${alarm.peakValue}).`
-        : `Leitura ${alarm.value} atingiu o limite de ${alarm.threshold}.`;
+        : state === 'reminder'
+          ? `Ativo há ${activeMinutes} min. Leitura atual ${alarm.value} (pico ${alarm.peakValue}), limite ${alarm.threshold}. Reconheça o alarme para parar os lembretes.`
+          : `Leitura ${alarm.value} atingiu o limite de ${alarm.threshold}.`;
     const type: NotificationType =
       state === 'cleared'
         ? NotificationType.SUCCESS
@@ -220,6 +232,30 @@ export class TelemetryService {
       occupied,
       timestamp: at,
     });
+  }
+
+  // Alarme aberto e não reconhecido é relembrado a cada `alarmReminderMinutes`
+  // da organização, contados do último aviso (ou da abertura).
+  @Interval(60000)
+  async sweepAlarmReminders(now = new Date()) {
+    try {
+      const alarms = await TenantContext.runAsSystem(() =>
+        this.repository.findAlarmsAwaitingReminder(),
+      );
+
+      for (const { device, organization, ...alarm } of alarms) {
+        const intervalMs = organization.alarmReminderMinutes * 60000;
+        const last = (alarm.lastNotifiedAt ?? alarm.startedAt).getTime();
+        if (now.getTime() - last < intervalMs) continue;
+
+        await TenantContext.runAsTenant(alarm.organizationId, async () => {
+          await this.repository.updateAlarm(alarm.id, { lastNotifiedAt: now });
+          await this.notifyAlarm(device, alarm, 'reminder', now);
+        });
+      }
+    } catch (err) {
+      this.logger.error('Error in alarm reminder sweep', err as Error);
+    }
   }
 
   // Sala vazia é ausência de movimento por `vacancyTimeoutSec`. Varre todas as

@@ -177,6 +177,20 @@ export class NotificationsController {
     return this.notificationsService.markAllAsRead(req.user.sub);
   }
 
+  @Delete('me')
+  @ApiOperation({
+    summary: 'Remover todas as notificações do usuário',
+    description: 'Apaga todas as notificações do usuário autenticado',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Notificações removidas',
+    schema: { example: { count: 15 } },
+  })
+  async deleteAllMine(@Request() req: any) {
+    return this.notificationsService.deleteAllByUser(req.user.sub);
+  }
+
   @Delete(':id')
   @ApiOperation({ summary: 'Deletar notificação' })
   @ApiParam({ name: 'id', description: 'ID da notificação' })

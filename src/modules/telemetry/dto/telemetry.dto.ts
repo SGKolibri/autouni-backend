@@ -88,6 +88,19 @@ export class UpsertThresholdDto {
   enabled?: boolean;
 }
 
+export class AlarmSettingsDto {
+  @ApiProperty({
+    example: 5,
+    description:
+      'Minutos entre lembretes de um alarme aberto e não reconhecido. 0 desativa.',
+  })
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(1440)
+  reminderMinutes: number;
+}
+
 export class AlarmsQueryDto {
   @ApiPropertyOptional({
     description: 'true = só abertos; false = só encerrados',

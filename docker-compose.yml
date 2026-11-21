@@ -55,13 +55,15 @@ services:
       # Para desenvolvimento, use o banco local ou remoto conforme .env
       DATABASE_URL: postgresql://postgres:autounidockeradmin@db:5432/autounidb?schema=public
       # MQTT dentro do container usa o hostname do serviço (mqtt)
-      MQTT_URL: ${MQTT_URL:-mqtt://mqtt:1883}
+      MQTT_URL: mqtt://mqtt:1883
       MQTT_USERNAME: ${MQTT_USERNAME}
       MQTT_PASSWORD: ${MQTT_PASSWORD}
       # Endereço que os ESP32 usam (vai na resposta de POST /nodes).
       MQTT_PUBLIC_URL: ${MQTT_PUBLIC_URL:-}
       # Porta interna fixa da API no container
       PORT: 3000
+      # URL pública (porta do host) usada pelo Swagger e links de e-mail
+      APP_URL: ${APP_URL:-http://localhost:10000}
       JWT_SECRET: ${JWT_SECRET}
       ROOT_EMAIL: ${ROOT_EMAIL}
       ROOT_PASSWORD: ${ROOT_PASSWORD}

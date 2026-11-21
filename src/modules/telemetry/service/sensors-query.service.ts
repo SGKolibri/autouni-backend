@@ -4,7 +4,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { TelemetryRepository } from '../repository/telemetry.repository';
+import { TenantContext } from '../../../common/tenant/tenant-context';
 import {
+  AlarmSettingsDto,
   AlarmsQueryDto,
   SensorReadingsQueryDto,
   UpsertThresholdDto,
@@ -75,6 +77,21 @@ export class SensorsQueryService {
 
   alarms(query: AlarmsQueryDto) {
     return this.repository.findAlarms(query);
+  }
+
+  async alarmSettings() {
+    const org = await this.repository.getAlarmReminderMinutes(
+      TenantContext.requireOrganizationId(),
+    );
+    return { reminderMinutes: org.alarmReminderMinutes };
+  }
+
+  async updateAlarmSettings(dto: AlarmSettingsDto) {
+    const org = await this.repository.setAlarmReminderMinutes(
+      TenantContext.requireOrganizationId(),
+      dto.reminderMinutes,
+    );
+    return { reminderMinutes: org.alarmReminderMinutes };
   }
 
   async acknowledge(id: string, userId: string) {

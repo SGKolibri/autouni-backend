@@ -17,6 +17,7 @@ import { RolesGuard } from '../../../common/auth/roles.guard';
 import { MANAGERS, OPERATORS, Roles } from '../../../common/auth/roles';
 import { SensorsQueryService } from '../service/sensors-query.service';
 import {
+  AlarmSettingsDto,
   AlarmsQueryDto,
   SensorReadingsQueryDto,
   UpsertThresholdDto,
@@ -69,6 +70,24 @@ export class SensorsController {
   @Roles(...MANAGERS)
   deleteThreshold(@Param('id', ParseUUIDPipe) id: string) {
     return this.sensors.deleteThreshold(id);
+  }
+
+  @Get('alarm-settings')
+  @ApiOperation({
+    summary: 'Configuração de alarmes da organização (intervalo do lembrete)',
+  })
+  alarmSettings() {
+    return this.sensors.alarmSettings();
+  }
+
+  @Put('alarm-settings')
+  @Roles(...MANAGERS)
+  @ApiOperation({
+    summary:
+      'Altera o intervalo do lembrete de alarme aberto e não reconhecido (0 desativa)',
+  })
+  updateAlarmSettings(@Body() dto: AlarmSettingsDto) {
+    return this.sensors.updateAlarmSettings(dto);
   }
 
   @Get('alarms')

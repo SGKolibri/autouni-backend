@@ -115,6 +115,7 @@ export class TelemetryRepository {
     value: number;
     threshold: number;
     startedAt: Date;
+    lastNotifiedAt?: Date;
   }) {
     return this.prisma.sensorAlarm.create({
       data: withTenant({ ...data, peakValue: data.value }),
@@ -169,6 +170,37 @@ export class TelemetryRepository {
 
   updateRoom(roomId: string, data: Prisma.RoomUncheckedUpdateInput) {
     return this.prisma.room.update({ where: { id: roomId }, data });
+  }
+
+  // Organization não tem escopo de tenant: o id vem do contexto da requisição.
+  getAlarmReminderMinutes(organizationId: string) {
+    return this.prisma.organization.findUniqueOrThrow({
+      where: { id: organizationId },
+      select: { alarmReminderMinutes: true },
+    });
+  }
+
+  setAlarmReminderMinutes(organizationId: string, minutes: number) {
+    return this.prisma.organization.update({
+      where: { id: organizationId },
+      data: { alarmReminderMinutes: minutes },
+      select: { alarmReminderMinutes: true },
+    });
+  }
+
+  // Sem escopo de tenant: chamado pela varredura de lembretes via runAsSystem.
+  findAlarmsAwaitingReminder() {
+    return this.prisma.sensorAlarm.findMany({
+      where: {
+        clearedAt: null,
+        acknowledgedAt: null,
+        organization: { alarmReminderMinutes: { gt: 0 } },
+      },
+      include: {
+        device: true,
+        organization: { select: { alarmReminderMinutes: true } },
+      },
+    });
   }
 
   // Sem escopo de tenant: chamado pela varredura periódica via runAsSystem.

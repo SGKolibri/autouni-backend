@@ -88,6 +88,11 @@ export class NotificationsRepository implements INotificationsRepository {
     return result.count;
   }
 
+  async deleteAllByUser(userId: string): Promise<number> {
+    const result = await this.prisma.notification.deleteMany({ where: { userId } });
+    return result.count;
+  }
+
   async delete(id: string): Promise<Notification> {
     return this.prisma.notification.delete({
       where: { id },

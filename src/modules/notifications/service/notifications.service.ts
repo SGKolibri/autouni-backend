@@ -59,6 +59,11 @@ export class NotificationsService {
     return { count };
   }
 
+  async deleteAllByUser(userId: string): Promise<{ count: number }> {
+    const count = await this.notificationsRepository.deleteAllByUser(userId);
+    return { count };
+  }
+
   async delete(id: string, actor?: Actor): Promise<Notification> {
     await this.findById(id, actor);
     return this.notificationsRepository.delete(id);

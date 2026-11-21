@@ -9,6 +9,7 @@ export interface INotificationsRepository {
   markAsRead(id: string): Promise<Notification>;
   markAllAsRead(userId: string): Promise<number>;
   delete(id: string): Promise<Notification>;
+  deleteAllByUser(userId: string): Promise<number>;
 }
 
 export interface CreateNotificationData {
